@@ -286,7 +286,7 @@ describe('PokerNow DOM adapter (hand-written fixture markup; live selectors unve
         expect([obs.smallBlind, obs.bigBlind]).toEqual([10, 20]);
         expect(obs.toActSeat).toBe(f.obs.toActSeat);
         expect(obs.heroToAct).toBe(f.obs.heroToAct);
-        expect(obs.controls).toEqual(f.obs.controls);
+        expect(obs.controls).toMatchObject(f.obs.controls); // plus the classified button list (controls.test.ts)
         expect(obs.seats.map((s) => [s.seat, s.name, s.stack, s.bet, s.folded, s.isHero, s.hasCards, s.shownCards]))
           .toEqual(f.obs.seats.map((s) => [s.seat, s.name, s.stack, s.bet, s.folded, s.isHero, s.hasCards, s.shownCards]));
       }

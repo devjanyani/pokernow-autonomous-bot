@@ -190,7 +190,7 @@ export interface LiveState {
     unsupported: boolean; issues: string[]; waitingReason: string | null; handsSeen: number;
     phase: string; consistency: string; settled: boolean; blockers: string[]; warnings: string[];
     observedActor: number | null; predictedActor: number | null; turnStatus: string; heroStatus: string;
-    legal: { status: string; detail: string | null };
+    legal: { status: string; detail: string | null; context?: { street: string; heroStreetCommit: number; currentBet: number; toCall: number; controls: string[]; wagerLabel: string | null; presets: number[] } };
     discrepancies: { ts: number; kind: string; message: string; street: string; eventCount: number; blocking: boolean }[];
   };
   recommendation: Recommendation;

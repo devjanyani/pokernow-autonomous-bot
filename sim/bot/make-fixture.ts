@@ -4,7 +4,7 @@
 //
 // Player names, player ids and the table id are replaced by placeholders, the
 // browser string is dropped, and only what a replay needs is kept per frame:
-// the observation (minus raw button texts) and the live decision state.
+// the observation (with the raw button texts) and the live decision state.
 // The observations themselves are not altered.
 // ============================================================
 
@@ -20,8 +20,8 @@ const fixture = {
   hands: b.hands.map((h) => ({
     handKey: h.handKey, firstWall: 0, lastWall: 0, startsAtHandStart: h.startsAtHandStart,
     frames: h.frames.map((f) => {
-      const obs = { ...f.obs };
-      delete obs.raw;
+      // Button class|text strings are kept: they are what the control parser saw, and hold no player data.
+      const obs = { ...f.obs, raw: f.obs.raw ? { buttons: f.obs.raw.buttons, signal: f.obs.raw.signal, pot: f.obs.raw.pot, timer: null } : undefined };
       return { n: f.n, obs, liveDecision: f.decision.state, livePredictedActor: f.tracker.predictedActor, livePhase: f.tracker.phase };
     }),
   })),

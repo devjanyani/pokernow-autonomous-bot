@@ -48,7 +48,9 @@ export function toHtml(o: TableObs, opts: { gameType?: string; heroCardCount?: n
   const buttons = o.heroToAct
     ? `<div class="game-decisions-ctn"><div class="action-signal">Your Turn</div>`
       + (c.call !== null ? `<button class="button-1 call" type="button">Call ${c.call.toLocaleString('en-US')}</button>` : '')
-      + (c.raise ? `<button class="button-1 raise" type="button">${c.call !== null ? 'Raise' : 'Bet'}</button>` : '')
+      // As recorded on PokerNow: with nothing to call, a one-click minimum bet is drawn with the CALL button's classes.
+      + (c.raise && c.call === null && o.board.length >= 3 ? `<button class="button-1 action-button call with-tip call green " type="button">Bet ${o.bigBlind}</button>` : '')
+      + (c.raise ? `<button class="button-1 raise" type="button">${c.call !== null || o.board.length < 3 ? 'Raise' : 'Bet'}</button>` : '')
       + (c.check ? '<button class="button-1 check" type="button">Check</button>' : '')
       + (c.fold ? '<button class="button-1 fold" type="button">Fold</button>' : '')
       + (c.raise ? `<form class="raise-controller-form" style="display:none"><input class="value" type="text" value=""><input type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}"><input type="submit" value="Bet"></form>` : '')

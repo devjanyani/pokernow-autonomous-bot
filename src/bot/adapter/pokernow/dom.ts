@@ -16,8 +16,9 @@
 // ============================================================
 
 import { CardId, parseCardStrict } from '../../cards';
-import { ControlsObs, emptyControls, SeatObs, TableObs } from '../observation';
+import { ControlsObs, SeatObs, TableObs } from '../observation';
 import type { TableDriver } from '../executor';
+import { ActionControl, classifyControl, controlsFromActions, parseChipText } from './controls';
 
 export const SELECTORS = {
   seat: '.table-player',
@@ -57,14 +58,7 @@ export const SELECTORS = {
 export type SelectorMap = typeof SELECTORS;
 
 /** "1,250" / "12.50" / "1.2k" -> number; null when the text is not a chip amount. */
-export function parseChips(text: string | null | undefined): number | null {
-  if (!text) return null;
-  const t = text.replace(/[\s,$€£]/g, '').toLowerCase();
-  const m = t.match(/^(\d+(?:\.\d+)?)([kmb])?$/);
-  if (!m) return null;
-  const mult = m[2] === 'k' ? 1e3 : m[2] === 'm' ? 1e6 : m[2] === 'b' ? 1e9 : 1;
-  return Math.round(Number(m[1]) * mult * 100) / 100;
-}
+export const parseChips = parseChipText;
 
 const PRE_ACTION_RE = /check\s*(or|\/)\s*fold|fold\s*(to)?\s*any|call\s*any|check\/fold/i;
 const visible = (el: Element | null): el is HTMLElement => {
@@ -185,25 +179,36 @@ export class PokerNowDom implements TableDriver {
     };
   }
 
-  private button(selector: string): HTMLElement | null {
-    for (const b of Array.from(this.doc.querySelectorAll(selector))) {
-      if (visible(b) && !PRE_ACTION_RE.test(b.textContent ?? '')) return b;
+  /** Buttons of the action area, in document order (also the class-named ones, wherever they sit). */
+  private controlButtons(): HTMLElement[] {
+    const scoped = this.sel.controls.split(',').map((c) => `${c.trim()} button`).join(', ');
+    const all = Array.from(this.doc.querySelectorAll(`${scoped}, ${this.sel.foldBtn}, ${this.sel.checkBtn}, ${this.sel.callBtn}, ${this.sel.raiseBtn}`)) as HTMLElement[];
+    return all.filter((b, i) => all.indexOf(b) === i);
+  }
+
+  private classified(): { el: HTMLElement; c: ActionControl }[] {
+    return this.controlButtons().map((el) => ({ el, c: classifyControl({ text: el.textContent ?? '', cls: String(el.className), visible: visible(el) || this.shown(el), disabled: !!(el as HTMLButtonElement).disabled }) }));
+  }
+
+  /** Displayed (ignores `disabled`, which is reported separately). */
+  private shown(el: HTMLElement): boolean {
+    const view = el.ownerDocument.defaultView;
+    if (!view || !el.isConnected) return false;
+    const st = view.getComputedStyle(el);
+    return !(st && (st.display === 'none' || st.visibility === 'hidden'));
+  }
+
+  /** The visible, enabled control whose LABEL names this action (never chosen by class or position). */
+  private actionButton(kind: 'fold' | 'check' | 'call' | 'wager'): HTMLElement | null {
+    for (const { el, c } of this.classified()) {
+      if (!c.enabled) continue;
+      if (kind === 'wager' ? (c.kind === 'bet' || c.kind === 'raise') && !c.preset : c.kind === kind) return el;
     }
     return null;
   }
 
   private readControls(): ControlsObs {
-    const c = emptyControls();
-    c.fold = !!this.button(this.sel.foldBtn);
-    c.check = !!this.button(this.sel.checkBtn);
-    const call = this.button(this.sel.callBtn);
-    if (call) {
-      const m = (call.textContent ?? '').match(/([\d][\d.,]*\s*[kmb]?)\s*$/i);
-      c.call = m ? parseChips(m[1]) : null;
-      // "Call" with no amount (rare skins): treat as unknown rather than zero.
-      if (c.call === null) c.call = Number.NaN;
-    }
-    c.raise = !!this.button(this.sel.raiseBtn);
+    const c = controlsFromActions(this.classified().map((x) => x.c));
     const slider = this.doc.querySelector(this.sel.raiseSlider) as HTMLInputElement | null;
     if (slider) { c.minRaiseTo = parseChips(slider.min); c.maxRaiseTo = parseChips(slider.max); }
     return c;
@@ -212,7 +217,7 @@ export class PokerNowDom implements TableDriver {
   // ---- driver -------------------------------------------------------------
 
   async click(kind: 'fold' | 'check' | 'call'): Promise<boolean> {
-    const b = this.button(kind === 'fold' ? this.sel.foldBtn : kind === 'check' ? this.sel.checkBtn : this.sel.callBtn);
+    const b = this.actionButton(kind);
     if (!b) return false;
     b.click();
     return true;
@@ -231,7 +236,7 @@ export class PokerNowDom implements TableDriver {
   async betOrRaise(to: number): Promise<{ submitted: boolean; readBack: number | null; detail: string }> {
     let input = this.doc.querySelector(this.sel.raiseInput) as HTMLInputElement | null;
     if (!visible(input)) {
-      const open = this.button(this.sel.raiseBtn);
+      const open = this.actionButton('wager');
       if (!open) return { submitted: false, readBack: null, detail: 'no bet/raise button' };
       open.click();
       for (let i = 0; i < 20 && !visible(input); i++) { await this.sleep(50); input = this.doc.querySelector(this.sel.raiseInput) as HTMLInputElement | null; }

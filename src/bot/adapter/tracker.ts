@@ -39,6 +39,7 @@ import {
   ActionInput, applyAction, awaitingBoard, cloneHand, completeHand, createHand, dealBoard, HandState, LegalActions, legalActions, potTotal, seatOf,
 } from '../table/engine';
 import { SeatObs, TableObs } from './observation';
+import { describeControls } from './pokernow/controls';
 
 export type EventSource =
   | 'forced-post' | 'bet-display' | 'fold-display' | 'cards-removed' | 'turn-passed'
@@ -125,7 +126,11 @@ export interface TrackerState {
   discrepancies: Discrepancy[];
   heroStatus: HeroStatus;
   /** Hero's legal actions per the engine, compared with the visible buttons. */
-  legal: { status: 'match' | 'mismatch' | 'unverified' | 'n/a'; detail: string | null; actions: LegalActions | null };
+  legal: {
+    status: 'match' | 'mismatch' | 'unverified' | 'n/a'; detail: string | null; actions: LegalActions | null;
+    /** What the comparison was made from (present on Hero's turn): for the debug bundle. */
+    context?: { street: string; heroStreetCommit: number; currentBet: number; toCall: number; controls: string[]; wagerLabel: string | null; presets: number[] };
+  };
   participation: SeatParticipation[];
   meta: EventMeta[];
 }
@@ -646,9 +651,16 @@ export class HandTracker {
         const problems: string[] = [];
         if (c.call !== null && Math.abs(c.call - la.callAmount) > tol) problems.push(`call button shows ${c.call}, engine computes ${la.callAmount}`);
         if (c.check !== la.canCheck && (c.check || c.call !== null)) problems.push(`check button ${c.check ? 'present' : 'absent'} but engine canCheck=${la.canCheck}`);
-        if (!c.fold && !c.check && c.call === null) this.legal = { status: 'unverified', detail: 'no action buttons were read', actions: la };
-        else this.legal = { status: problems.length ? 'mismatch' : 'match', detail: problems.join('; ') || null, actions: la };
-        for (const p of problems) found.push({ kind: 'legal', msg: p, block: true });
+        // A button labelled "Bet" means nothing is outstanding; "Raise" means Hero faces a bet. Compared as labels, never as amounts.
+        const notes: string[] = [];
+        if (c.wagerKind === 'bet' && la.raiseKind === 'raise' && h.street !== 'preflop') notes.push('the wager button says "Bet" but the engine has a bet outstanding');
+        if (c.wagerKind === 'raise' && la.raiseKind === 'bet') notes.push('the wager button says "Raise" but the engine has no bet outstanding');
+        const hero = seatOf(h, this.heroSeat);
+        const context = { street: h.street, heroStreetCommit: hero.streetCommit, currentBet: h.currentBet, toCall: la.callAmount, controls: describeControls(c), wagerLabel: c.wagerKind ?? null, presets: c.presets ?? [] };
+        if (!c.fold && !c.check && c.call === null) this.legal = { status: 'unverified', detail: 'no action buttons were read', actions: la, context };
+        else this.legal = { status: problems.length ? 'mismatch' : 'match', detail: [...problems, ...notes].join('; ') || null, actions: la, context };
+        for (const p of problems) found.push({ kind: 'legal', msg: `${p} (${h.street}: Hero has ${hero.streetCommit} in front, highest bet ${h.currentBet}; buttons read: ${context.controls.join(', ') || 'none'})`, block: true });
+        for (const n of notes) found.push({ kind: 'legal', msg: n, block: false });
       } else if (h.toAct === this.heroSeat) {
         this.legal = { status: 'unverified', detail: 'engine expects Hero to act; the table does not show Hero\'s turn yet', actions: legalActions(h) };
       }

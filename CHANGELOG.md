@@ -2,6 +2,13 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.5.1 (2026-11-13)
+Found in a second real recording (kept as `tests/bot/fixtures/live-2026-11-13b.json`).
+- Fixed: when a check is free PokerNow shows `[Bet 5] [Bet] [Check] [Fold]`, and draws the "Bet 5" shortcut with the same CSS class as the Call button. The adapter picked the call button by class and read its trailing number, so it reported "Call 5" and every free-check decision after the flop was blocked ("call button shows 5, engine computes 0"). Buttons are now classified by their label text (`src/bot/adapter/pokernow/controls.ts`): fold, check, call, bet, raise, all-in, size shortcuts, pre-actions, with visibility and enabled state.
+- Fixed (same cause, never triggered because autonomous mode was off): the driver's "call" would have clicked that "Bet 5" button. Clicks now go to the button whose label names the action.
+- New: a legal-action mismatch records the buttons as read, the street, Hero's chips in front, the highest bet and the reconstructed amount to call, in the message and in the debug bundle; the Diagnostics tab shows them.
+- Tests: 24 new (classification, real-recording regression, DOM, click guard).
+
 ## v0.5.0 (2026-11-13)
 Fixes found by replaying the first debug bundle from a real PokerNow table (kept as `tests/bot/fixtures/live-2026-11-13.json`), and a redesigned dashboard and overlay. See `docs/bot/TRACKING.md` section 0.
 - Fixed: a sitting-out player (drawn by PokerNow with the `fold` class, no cards, no chips) was counted as dealt in and could be given a blind. Hero's own big blind was then read as a call and the betting round closed before Hero's option ("engine expects no further action").

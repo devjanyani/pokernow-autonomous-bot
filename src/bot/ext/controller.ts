@@ -405,7 +405,7 @@ export class LiveController {
         valid: st.valid, confidence: st.confidence, unsupported: st.unsupported, issues: st.issues, waitingReason: st.waitingReason, handsSeen: st.handsSeen,
         phase: st.phase, consistency: st.consistency, settled: st.settled, blockers: st.blockers, warnings: st.warnings,
         observedActor: st.observedActor, predictedActor: st.predictedActor, turnStatus: st.turnStatus, heroStatus: st.heroStatus,
-        legal: { status: st.legal.status, detail: st.legal.detail }, discrepancies: st.discrepancies.slice(-20),
+        legal: { status: st.legal.status, detail: st.legal.detail, context: st.legal.context }, discrepancies: st.discrepancies.slice(-20),
       },
       recommendation: this.rec,
       readiness: this.readiness(obs, st, decision),

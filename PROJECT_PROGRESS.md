@@ -1,10 +1,12 @@
 # Project progress
 
-Last updated: 2026-11-13. Branch `autonomous-bot`. Version 0.5.0.
+Last updated: 2026-11-13. Branch `autonomous-bot`. Version 0.5.1.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md).
 
 ## Where things stand
+
+**0.5.1 (latest):** a second real recording showed tracking working on all five hands and one new failure: PokerNow's "Bet 5" shortcut was read as "Call 5", which blocked Hero's free check on the flop, turn and river. Buttons are now classified by their label. Details in "Version 0.5.1" below.
 
 Version 0.5.0 fixes the turn-tracking failures found by replaying the first debug bundle from a real PokerNow table, and redesigns the dashboard and the in-page overlay. The real recording (5 hands, 118 frames) now reconstructs exactly: every Hero turn in it gets a recommendation, with no blocker, warning or deduced action. That is one six-handed session at 1/2 blinds; it is evidence for those situations, not a soak.
 
@@ -19,6 +21,20 @@ Version 0.5.0 fixes the turn-tracking failures found by replaying the first debu
 | Dashboard and overlay redesign | Done; checked in Chromium and on the recorded states |
 | Further live sessions (other table sizes, antes, all-ins, long soak) | **Not done** |
 | Autonomous play on a live table | Not attempted; stay in recommend mode |
+
+## Version 0.5.1: action buttons
+
+Evidence: `debug_bundles/poker-bot-debug-2026-11-13T20-06-04-008Z.json` (local, git-ignored), anonymised copy `tests/bot/fixtures/live-2026-11-13b.json` (5 hands, 211 frames, recorded by 0.5.0 at a nine to ten handed 2/5 table).
+
+- **Recorded:** with nothing to call, PokerNow shows `[Bet 5] [Bet] [Check] [Fold]`. The "Bet 5" button has the class list `button-1 action-button call with-tip call green`, the same as the Call button. Hero (big blind, 4d 9c) saw this on the flop, turn and river of one hand (frames 213 to 226); 0.5.0 reported "call button shows 5, engine computes 0" each time and gave no recommendation. The turn tracking itself was right: Hero's turn, nothing to call.
+- **Root cause:** `PokerNowDom.readControls` selected `button.call` by CSS class and took the number at the end of its text as the call amount, without reading the word in front of it.
+- **Second effect of the same defect:** the click driver used the same selector, so a "call" would have pressed "Bet 5". It never ran (autonomous mode has not been used), and the click guard would have required a matching amount, but it was wrong.
+- **Fix:** `src/bot/adapter/pokernow/controls.ts` classifies every button by label text into fold, check, call, bet, raise, all-in, pre-action or other, with amount, size-shortcut flag, visibility and enabled state. `ControlsObs` gains `wagerKind`, `presets`, `allIn` and the classified list; `call` is set only by a button that says Call. Reading, validation, the click guard and clicking all use this one representation.
+- **Diagnostics:** a mismatch message now carries the street, Hero's chips in front, the highest bet and every button as read; the same is stored per frame in the debug bundle and shown on the Diagnostics tab under "Action buttons".
+- **Result on the recording** (buttons re-classified from the stored texts): no blocker on any settled frame, all 23 genuine Hero-turn frames usable, a recommendation on each of the three free-check streets (check or bet, never fold).
+- Strategy code was not changed. The free-check rule from 0.4.0 already keeps fold out of the options when checking is free; the tests confirm it on these frames.
+
+Also seen in this recording and **not fixed**: one hand starts with 2 dead chips in the middle (the pot shows "2 total 9" with blinds 2 and 5). The engine pot is 2 lower than the table for that hand; it is reported as a warning and decisions continue with a pot 2 chips too small.
 
 ## Version 0.5.0: engine
 
@@ -46,19 +62,24 @@ Emergency stop: confirmed in code and by test to be independent of tracking and 
 
 | Check | Command | Result |
 |---|---|---|
-| Full suite | `npm test` | 959 of 959 pass (72 files, about 10 minutes) |
-| Bot suite | `npm run test:bot` | 181 of 181 (155 earlier, 19 real-recording and dead-small-blind, 7 presentation) |
+| Full suite | `npm test` | 983 of 983 pass (73 files, about 10 minutes) |
+| Bot suite | `npm run test:bot` | 205 of 205 (181 earlier, 24 for action buttons) |
+| Button tests before the fix | `tests/bot/controls-dom.test.ts` on 0.5.0 code | 3 of 5 failed, as expected (Bet 5 read as a call of 5; "call" clicks the Bet shortcut) |
 | Real-recording tests before the fix | `tests/bot/live-replay.test.ts` on 0.4.0 code | 8 of 10 failed, as expected |
 | Type check, lint, build | `npm run build`, `npx eslint` | clean (lint warnings only) |
 | Built extension in Chromium, recommend-only, stand-in table | `npm run bot:e2e:recommend` | 32 of 32 ([report](reports/e2e-extension-recommend-only-2026-11-13.md)) |
-| Replay of the real bundle | `npm run bot:replay -- debug_bundles/<file>` | 5 hands valid, 0 divergences, Hero turns usable 6 of 6 |
+| Replay of the first real bundle | `npm run bot:replay -- debug_bundles/<file>` | 5 hands valid, 0 divergences, Hero turns usable 6 of 6 |
+| Second real bundle, buttons re-classified | `tests/bot/controls.test.ts` | 5 hands valid, no settled blocker, 23 Hero-turn frames usable |
 | Autonomous browser check, benchmark | `npm run bot:e2e`, `npm run bot:bench` | Not re-run (out of scope; strategy unchanged) |
 
 One earlier synthetic test changed: scenario 21 now expects a highlight on a folded seat to be "lagging" for 1.5 s before it is a disagreement, because that is what the real page does.
 
 ## Remaining problems
 
-- One recording only. Not yet seen live: heads-up and short-handed tables, antes, straddles, a dead big blind, all-in run-outs with side pots, showdowns involving Hero, Hero betting or raising.
+- Dead money at the start of a hand (seen once: 2 chips) is not modelled; the engine pot is low by that amount for the hand.
+- An all-in player's stack is not a number on the page; it is treated as unknown and skipped in stack checks.
+- The 0.5.1 fix has been checked against recorded button texts, not yet seen running on the live page.
+- Two recordings only. Not yet seen live: heads-up and short-handed tables, antes, straddles, a dead big blind, all-in run-outs with side pots, showdowns involving Hero, Hero betting or raising.
 - Two frames of the recording show Hero's turn for 80 to 90 ms before Hero is folded (probably a pre-selected fold; that is an inference). No recommendation can be read in that time.
 - At frame 64 PokerNow showed "Your Turn" with no action buttons readable for one frame; the tracker agrees on the actor but the controller waits for the buttons. Harmless there (Hero folded 70 ms later), worth watching.
 - The bundle's log mentions earlier hands on another table marked "reconstruction invalid"; their frames were not in the export, so they could not be examined.
@@ -82,4 +103,5 @@ One earlier synthetic test changed: scenario 21 now expects a highlight on a fol
 - 2026-11-12: baseline verified (778 tests, build). Core engine, equity, profiles, strategy, simulator and adapter written.
 - 2026-11-13: v0.3.0 (`96685c3`): extension, dashboard, storage, benchmark, first push.
 - 2026-11-13: v0.4.0 (`af85cb5`): tracker rewrite around observed versus predicted actor, recorder, debug bundle, replay.
-- 2026-11-13: v0.5.0: first real debug bundle analysed; sitting-out seats, highlight lag and dead small blind fixed against it; dashboard and overlay redesigned.
+- 2026-11-13: v0.5.0 (`4ffaf72`): first real debug bundle analysed; sitting-out seats, highlight lag and dead small blind fixed against it; dashboard and overlay redesigned.
+- 2026-11-13: v0.5.1: second real bundle; action buttons classified by label ("Bet 5" was read as "Call 5").

@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { CardId } from '../cards';
+import type { ActionControl } from './pokernow/controls';
 
 export interface SeatObs {
   /** Physical seat number as shown by the site (stable within a session). */
@@ -40,6 +41,13 @@ export interface ControlsObs {
   /** Bounds shown by the bet input, when readable. */
   minRaiseTo: number | null;
   maxRaiseTo: number | null;
+  /** What the wager buttons are labelled: "Bet" (nothing to call) or "Raise" (facing a bet). Null when none or unknown. */
+  wagerKind?: 'bet' | 'raise' | 'mixed' | null;
+  /** Amounts of one-click size shortcuts ("Bet 5"). These are wagers Hero may make, never an amount to call. */
+  presets?: number[];
+  allIn?: boolean;
+  /** Every button read, classified by its label, with visibility and enabled state (diagnostics, replay). */
+  actions?: ActionControl[];
 }
 
 export interface TableObs {

@@ -1,6 +1,6 @@
 # Game-state reconstruction, turn tracking and diagnostics
 
-Version 0.5.0. Code: `src/bot/adapter/tracker.ts`, `src/bot/ext/controller.ts`, `src/bot/diag/`. Tests: `tests/bot/tracking.test.ts`.
+Version 0.5.1. Code: `src/bot/adapter/tracker.ts`, `src/bot/ext/controller.ts`, `src/bot/diag/`. Tests: `tests/bot/tracking.test.ts`.
 
 **Status.** 0.5.0 reconstructs one real recording (5 hands) exactly, with no blocker, no warning and no deduced action, and is otherwise tested on synthetic tables. One recording is not a soak: section 0 lists what it did not contain.
 
@@ -23,6 +23,19 @@ Fixes in 0.5.0, each covered by a test that failed on 0.4.0 against this recordi
 1. **Dealt in means cards or chips.** A seat with neither at the first frame is not in the hand, whatever its classes say.
 2. **A lagging highlight is not evidence.** A highlight (or Hero's buttons) on a seat that has nothing to decide is treated as "not moved yet" for up to 1.5 s and only then as a disagreement. Deductions are also withdrawn if they would end the hand while the page still shows someone acting.
 3. **Blinds are read from the chips.** The standard layout or a dead small blind is chosen by which one the visible chips and pot support (`noSmallBlind` in the rules engine).
+
+### Second recording (2026-11-13, v0.5.1)
+
+A second bundle (5 hands, 211 frames, nine or ten handed, blinds 2/5, extension 0.5.0) showed 0.5.0 tracking every hand correctly, and one new failure:
+
+| Recorded fact | Consequence |
+|---|---|
+| With nothing to call, PokerNow shows `[Bet 5] [Bet] [Check] [Fold]`. The "Bet 5" button's class list is `button-1 action-button call with-tip call green`, identical to the Call button's. With a bet to face it shows `[Call 5] [Raise] [Fold]`. Preflop in the big blind it shows `[Raise] [Check] [Fold]`. | The adapter found "the call button" by class and read the number at the end of its text, so "Bet 5" became "Call 5". On the flop, turn and river of one hand (frames 213 to 226) Hero's free check was blocked: "call button shows 5, engine computes 0". |
+| The bet form, when opened, has `default-bet-button` helpers: Min Raise, 1/2 Pot, 3/4 Pot, Pot, All In, and a Back button. | Classified as size helpers, not actions. |
+| One hand opens with 2 chips already in the middle (pot shown as "2 total 9" with blinds of 2 and 5) and the button's stack 2 lower than before. | Dead money is not modelled: the engine pot is 2 lower than the table for that hand. It is reported as a warning and decisions continue. Not fixed. |
+| An all-in player's stack is not a number on the page. | Read as "unknown" and skipped in stack checks; the all-in itself was reconstructed from the chips in front. |
+
+Fix in 0.5.1: buttons are classified by label text only (`pokernow/controls.ts`). "Bet N" is a wager Hero may make (a size shortcut), "Call N" is an outstanding amount; a class name or a single keyboard letter never decides the action. The same classification drives clicking, so "call" can only ever press a button that says Call. With the recorded button texts re-classified, the recording has no blocker on any settled frame and every Hero turn is usable.
 
 Not in the recording, so still unverified: antes, straddles, a dead big blind, run-it-twice, all-in run-outs with side pots, Hero's own bet entry, and tables with fewer than six dealt in.
 
@@ -174,7 +187,7 @@ The replay feeds the recorded observations through the same `HandTracker` and pr
 
 ## 8. Next live test (recommendation-only)
 
-1. `npm run build`, then in `chrome://extensions` press the reload arrow on the extension (or Load unpacked → `dist/`). The version should read 0.5.0. Reload the PokerNow tab.
+1. `npm run build`, then in `chrome://extensions` press the reload arrow on the extension (or Load unpacked → `dist/`). The version should read 0.5.1. Reload the PokerNow tab.
 2. Popup: mode **Recommend**. Leave authorisation off. Nothing is clicked in this mode.
 3. Open the dashboard, Diagnostics tab, and confirm "Record while a table is open" is ticked.
 4. Play 20 to 30 hands of a no-money game, including hands where you limp, are raised behind and act again, and hands in each blind.

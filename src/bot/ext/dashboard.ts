@@ -255,6 +255,17 @@ async function renderDiag(): Promise<void> {
       ['Hero', l.tracker.heroStatus],
       ['Table settled', l.tracker.settled ? 'yes' : 'still changing'],
     ]), l.tracker.blockers.length ? el('ul', { class: 'bad' }, ...l.tracker.blockers.map((b) => el('li', {}, b))) : null));
+    const lc = l.tracker.legal.context;
+    grid.append(section('buttons', 'Action buttons (as read, by label)', l.tracker.legal.status === 'mismatch', lc ? dl([
+      ['Buttons', el('span', {}, ...lc.controls.map((c) => el('div', {}, c)))],
+      ['Wager button label', lc.wagerLabel ?? '–'],
+      ['Size shortcuts', lc.presets.length ? lc.presets.join(', ') : '–'],
+      ['Reconstructed amount to call', String(lc.toCall)],
+      ['Street', lc.street],
+      ['Hero in front this street', String(lc.heroStreetCommit)],
+      ['Highest bet this street', String(lc.currentBet)],
+      ['Comparison', `${l.tracker.legal.status}${l.tracker.legal.detail ? `: ${l.tracker.legal.detail}` : ''}`],
+    ]) : el('p', { class: 'muted' }, 'Shown on your turn.'), el('p', { class: 'muted' }, 'A button is classified by its text. "Bet 5" is a bet you may make; only a button that says "Call" is an amount to call.')));
     const tl = el('div', { class: 'scroll' });
     let street = '';
     for (const e of l.timeline) {

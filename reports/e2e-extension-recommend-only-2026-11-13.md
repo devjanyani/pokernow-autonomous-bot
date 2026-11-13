@@ -17,17 +17,17 @@ The built `dist/` was loaded as an unpacked extension and pointed at a local sta
 | dashboard live page: the decision area is never empty | pass |  |
 | recommend-only soak: hands were played (the table moved Hero by itself) | pass | 4 hands, 17 table-driven hero actions in 50s |
 | recommend-only soak: the extension clicked nothing | pass | 0 clicks |
-| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 127 samples on Hero's turn: 123 with a recommendation, 4 while the table settled, 0 blocked |
+| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 129 samples on Hero's turn: 127 with a recommendation, 2 while the table settled, 0 blocked |
 | recommend-only soak: observed and predicted actor never disagreed on a settled table | pass | 0 samples |
 | recommend-only soak: no recommendation shown outside Hero's turn | pass | 0 samples |
 | recommend-only soak: explicit status for every situation | pass | recommendation ; Waiting for opponent. ; Hand complete — waiting for next hand. ; Reading the table . ; Betting round complete — waiting for the next card. ; Engine expects Hero to act; waiting for the table to show Hero's turn. |
-| dashboard: diagnostics are in collapsible sections | pass | 9 sections |
+| dashboard: diagnostics are in collapsible sections | pass | 10 sections |
 | dashboard: diagnostics tab shows the six state checks and the turn card | pass |  |
 | dashboard: action timeline is drawn | pass |  |
-| debug bundle exported from the dashboard | pass | 5 hands, 98 frames, extension 0.5.0, 499 KB |
+| debug bundle exported from the dashboard | pass | 5 hands, 96 frames, extension 0.5.1, 526 KB |
 | debug bundle replays offline with no divergence | pass | 5 hands replayed, 0 with a divergence |
 | hidden folds were deduced and marked as such | pass | 20 deduced actions in 5 hands |
-| replay: Hero turns usable | pass | 36 usable, 0 blocked of 43 frames |
+| replay: Hero turns usable | pass | 34 usable, 0 blocked of 41 frames |
 | hands stored in the extension database | pass | 4 stored, 4 valid |
 | most stored hands reconstructed cleanly | pass | 4/4 |
 | opponent profiles stored | pass | 6 profiles, up to 4 hands; ids like name:pgle2etest:Hero, name:pgle2etest:Villain 1 |
