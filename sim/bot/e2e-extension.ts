@@ -73,6 +73,7 @@ async function main(): Promise<void> {
     await setSettings({ mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [], minThinkMs: 0, maxThinkMs: 150 });
     await sleep(7000);
     check('content script attached (panel host present)', await table.evaluate(() => !!document.getElementById('poker-bot-panel-host')));
+    await dash.bringToFront();
     type Live = { tableId: string; decision: { label: string } | null; status: string; tracker: { valid: boolean; confidence: number; turnStatus: string; settled: boolean; blockers: string[] }; recommendation: { state: string; reason: string | null }; observation: { heroToAct: boolean }; acting: boolean; hand: unknown };
     let l = await live() as Live | undefined;
     check('live state reaches the dashboard', !!l && l.tableId === TABLE, l ? `table ${l.tableId}` : 'no live state');
@@ -80,7 +81,15 @@ async function main(): Promise<void> {
     check('recommend mode: a decision is shown', !!l?.decision, l?.decision?.label ?? 'none');
     const a = await stats();
     check('recommend mode: nothing clicked', a.heroActions === 0 && !l?.acting, `${a.heroActions} hero actions`);
-    check('dashboard renders the decision', (await dash.locator('#tab-live .big').count()) > 0);
+    const bigShown = await dash.waitForSelector('#tab-live #decision .big', { timeout: 25000 }).then(() => true, () => false);
+    check('dashboard renders the decision', bigShown, bigShown ? (await dash.locator('#tab-live #decision .big').first().innerText().catch(() => '')) : 'no recommendation appeared within 25 s');
+    const shots = process.argv.indexOf('--shots') >= 0 ? process.argv[process.argv.indexOf('--shots') + 1] : null;
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await dash.setViewportSize({ width: 1280, height: 900 }); await dash.screenshot({ path: path.join(shots, 'dashboard-live-action.png'), fullPage: true }).catch(() => undefined); await table.screenshot({ path: path.join(shots, 'overlay.png') }).catch(() => undefined); }
+    check('dashboard live page: status pill, five board slots, players list, timeline',
+      (await dash.locator('#status-pill').count()) === 1 && (await dash.locator('#board .pc').count()) === 5 && (await dash.locator('#players .prow').count()) >= 7 && (await dash.locator('#timeline .tlrow').count()) >= 2,
+      `pill "${await dash.locator('#status-pill').innerText().catch(() => '?')}", ${await dash.locator('#players .prow').count()} player rows`);
+    check('dashboard live page: no horizontal scrolling at 1280 px', await dash.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    check('dashboard live page: the decision area is never empty', (await dash.locator('#decision .big, #decision .msg').first().innerText().catch(() => '')).trim().length > 0);
 
     let c2 = a;
     if (REC_ONLY) {
@@ -110,8 +119,14 @@ async function main(): Promise<void> {
       check('recommend-only soak: no recommendation shown outside Hero\'s turn', staleShown === 0, `${staleShown} samples`);
       check('recommend-only soak: explicit status for every situation', [...statuses].every((s) => s.length > 0), [...statuses].slice(0, 9).join(' ; '));
 
+      if (shots) {
+        await dash.waitForSelector('#tab-live #decision .msg', { timeout: 15000 }).catch(() => undefined);
+        await dash.screenshot({ path: path.join(shots, 'dashboard-live-waiting.png'), fullPage: true }).catch(() => undefined);
+      }
       await dash.click('button[data-tab=diag]');
       await dash.waitForSelector('#bundle-export', { timeout: 5000 });
+      if (shots) await dash.screenshot({ path: path.join(shots, 'dashboard-diagnostics.png'), fullPage: true }).catch(() => undefined);
+      check('dashboard: diagnostics are in collapsible sections', (await dash.locator('#tab-diag details.sec').count()) >= 6 && (await dash.locator('#tab-diag details.sec:not([open])').count()) >= 2, `${await dash.locator('#tab-diag details.sec').count()} sections`);
       check('dashboard: diagnostics tab shows the six state checks and the turn card', (await dash.locator('#tab-diag dt', { hasText: 'Decision readiness' }).count()) > 0 && (await dash.locator('#tab-diag dt', { hasText: 'Observed actor (table)' }).count()) > 0);
       check('dashboard: action timeline is drawn', (await dash.locator('#tab-diag h2', { hasText: 'Preflop' }).count()) > 0);
       const dl = dash.waitForEvent('download', { timeout: 15000 });

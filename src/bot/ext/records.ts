@@ -200,7 +200,7 @@ export interface LiveState {
   timeline: TimelineEntry[];
   hand: null | {
     handId: string; street: string; phase: string; board: string[]; pot: number; heroSeat: number | null; heroCards: string[] | null;
-    heroPosition: string | null; effectiveStackBB: number | null; bigBlind: number;
+    heroPosition: string | null; effectiveStackBB: number | null; bigBlind: number; smallBlind: number; heroStack: number | null;
     counts: { seated: number; dealtIn: number; contesting: number; allIn: number; canAct: number; opponentsContesting: number; potType: string; headsUpTable: boolean } | null;
     players: { seat: number; name: string; playerId: string; position: string | null; stack: number; streetCommit: number; folded: boolean; allIn: boolean; toAct: boolean }[];
   };

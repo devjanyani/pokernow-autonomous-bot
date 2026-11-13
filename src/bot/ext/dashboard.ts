@@ -12,6 +12,7 @@ import {
 import { buildBundle } from '../diag/recorder';
 import { DecisionRecord, HandRecord, Indicator, LiveState, sanitizeSettings, Settings, toHandRecord } from './records';
 import { BotStorage } from './storage';
+import { actorLine, cardView, chips, contextRows, decisionBanner, explanation, playerRows, recentTimeline, statusPill } from './view';
 
 const storage = new BotStorage();
 let settings: Settings;
@@ -26,6 +27,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string,
   return e;
 }
 const card = (title: string, ...children: Child[]) => el('div', { class: 'card' }, el('h2', {}, title), ...children);
+/** Collapsible diagnostics section; whether it is open survives re-rendering. */
+const sectionOpen = new Map<string, boolean>();
+function section(key: string, title: string, openByDefault: boolean, ...children: Child[]): HTMLElement {
+  const d = el('details', { class: 'card sec', 'data-key': key }, el('summary', {}, title), ...children);
+  d.open = sectionOpen.get(key) ?? openByDefault;
+  d.addEventListener('toggle', () => sectionOpen.set(key, d.open));
+  return d;
+}
 const dl = (rows: [string, string | Node][]) => { const d = el('dl'); for (const [k, v] of rows) d.append(el('dt', {}, k), el('dd', {}, v)); return d; };
 const pct = (x: number | null | undefined, digits = 0) => (x === null || x === undefined || !Number.isFinite(x) ? '–' : `${(100 * x).toFixed(digits)}%`);
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -46,64 +55,90 @@ function indicatorRows(l: LiveState): [string, Node][] {
 
 // ---- live ---------------------------------------------------------------------
 
+/** A playing card. `null` draws a face-down card. Text only: no images, nothing fetched. */
+function playingCard(c: string | null, size: 'lg' | 'md' | 'sm' = 'md', dim = false): HTMLElement {
+  if (c === null) return el('span', { class: `pc ${size} back${dim ? ' dim' : ''}`, role: 'img', 'aria-label': dim ? 'card not dealt yet' : 'face-down card' });
+  const v = cardView(c);
+  return el('span', { class: `pc ${size}${v.red ? ' red' : ''}`, role: 'img', 'aria-label': v.label }, el('span', { class: 'r' }, v.rank), el('span', { class: 's' }, v.suit));
+}
+
+const tag = (text: string, tone = 'muted') => el('span', { class: `tag ${tone}` }, text);
+
 function renderLive(): void {
   const root = $('tab-live');
   root.textContent = '';
-  if (!live || Date.now() - live.ts > 20000) {
-    root.append(card('No live table', el('p', { class: 'muted' }, 'Open a PokerNow table in another tab. The content script reports here a few times per second.')));
-    return;
-  }
-  const l = live, h = l.hand, d = l.decision;
-  const grid = el('div', { class: 'grid' });
-  grid.append(card('System status', dl([
-    ['Mode', l.estop ? 'EMERGENCY STOP' : l.acting ? 'autonomous (acting)' : l.mode],
-    ['Engine', l.status],
-    ['Observation', Object.entries(l.observation.health).filter(([, ok]) => !ok).map(([k]) => k).join(', ') ? `missing: ${Object.entries(l.observation.health).filter(([, ok]) => !ok).map(([k]) => k).join(', ')}` : 'all key elements found'],
-    ['Phase', l.tracker.phase],
-    ...indicatorRows(l),
-    ['Decision deadline', l.deadlineMs !== null ? `${(l.deadlineMs / 1000).toFixed(1)}s${l.observation.timeRemainingMs === null ? ' (assumed clock)' : ''}` : '–'],
-    ['Last execution', l.lastExecution ? `${l.lastExecution.status}: ${l.lastExecution.action} (${l.lastExecution.reason})` : '–'],
-    ['Hands tracked', String(l.tracker.handsSeen)],
-  ]), el('p', { class: 'muted' }, 'Each line is a separate check. None of them is a probability.'), l.tracker.issues.length ? el('ul', { class: 'warn' }, ...l.tracker.issues.slice(-5).map((i) => el('li', {}, i))) : null));
+  const now = Date.now();
+  const pill = statusPill(live, now);
+  const banner = decisionBanner(live, now);
+  const l = live && now - live.ts <= 60000 ? live : null;
+  const h = l?.hand ?? null;
 
-  if (h) {
-    grid.append(card('Game', dl([
-      ['Hand', h.handId.split(':').slice(1, 3).join(' #')],
-      ['Hero', `${h.heroCards?.join(' ') ?? 'not dealt in'}${h.heroPosition ? ` · ${h.heroPosition}` : ''}`],
-      ['Board', h.board.join(' ') || '–'],
-      ['Street', h.phase],
-      ['Pot', `${h.pot} (${(h.pot / h.bigBlind).toFixed(1)} bb)`],
-      ['Effective stack', h.effectiveStackBB !== null ? `${h.effectiveStackBB.toFixed(1)} bb` : '–'],
-      ['Seated / dealt in', h.counts ? `${h.counts.seated} / ${h.counts.dealtIn}` : '–'],
-      ['Still in the hand', h.counts ? `${h.counts.contesting} (${h.counts.allIn} all-in, ${h.counts.canAct} can act)` : '–'],
-      ['Situation', h.counts ? (h.counts.headsUpTable ? 'heads-up table' : `${h.counts.potType} pot at a ${h.counts.dealtIn}-handed table`) : '–'],
-    ])));
-    const t = el('table', {}, el('tr', {}, el('th', {}, 'Seat'), el('th', {}, 'Player'), el('th', {}, 'Pos'), el('th', { class: 'num' }, 'Stack'), el('th', { class: 'num' }, 'Bet'), el('th', {}, '')));
-    for (const p of h.players) t.append(el('tr', {}, el('td', {}, String(p.seat)), el('td', {}, p.name + (p.seat === h.heroSeat ? ' (hero)' : '')), el('td', {}, p.position ?? ''), el('td', { class: 'num' }, String(p.stack)), el('td', { class: 'num' }, p.streetCommit ? String(p.streetCommit) : ''), el('td', { class: 'muted' }, p.folded ? 'folded' : p.allIn ? 'all-in' : p.toAct ? 'to act' : '')));
-    grid.append(card('Players', el('div', { class: 'scroll' }, t)));
-  }
-  if (!d && l.recommendation.state === 'blocked') grid.append(card('Decision', el('div', { class: 'big warn' }, 'Decision unavailable — state reconciliation required.'), el('p', {}, l.recommendation.reason ?? ''), el('p', { class: 'muted' }, 'No recommendation is shown because the reconstructed state cannot be trusted for this decision. The Diagnostics tab shows the timeline and can export a debug bundle.')));
-  else if (!d && h) grid.append(card('Decision', el('p', {}, l.status)));
-  if (d) {
-    const ct = el('table', {}, el('tr', {}, el('th', {}, 'Action'), el('th', { class: 'num' }, 'EV (chips)'), el('th', { class: 'num' }, '± SE'), el('th', { class: 'num' }, 'Play %')));
+  // ---- status line: one compact indicator; the detail lives on the Diagnostics tab ----
+  root.append(el('div', { class: 'statusline' },
+    el('span', { class: `statuspill ${pill.tone}`, id: 'status-pill' }, pill.label),
+    el('span', { class: 'muted' }, pill.detail),
+    l ? el('span', { class: 'spacer' }) : null,
+    l ? tag(l.estop ? 'Emergency stop on' : l.acting ? 'Autonomous' : l.mode === 'manual' ? 'Manual' : 'Recommend only', l.estop ? 'warn' : 'muted') : null));
+
+  // ---- table: hero and board ----
+  const heroCards = h?.heroCards ?? null;
+  const hero = el('div', { class: 'hero' },
+    el('div', { class: 'cards' }, playingCard(heroCards ? heroCards[0] : null, 'lg', !heroCards), playingCard(heroCards ? heroCards[1] : null, 'lg', !heroCards)),
+    el('div', { class: 'heroinfo' },
+      el('div', { class: 'label' }, 'Your hand'),
+      el('div', { class: 'posline' }, h?.heroPosition ? el('span', { class: 'posbadge' }, h.heroPosition) : null, el('span', {}, heroCards ? heroCards.map((c) => { const v = cardView(c); return `${v.rank}${v.suit}`; }).join(' ') : 'Not dealt in')),
+      el('div', { class: 'muted' }, h && h.heroStack !== null ? `Stack ${chips(h.heroStack)}${h.bigBlind ? ` · ${(h.heroStack / h.bigBlind).toFixed(0)} bb` : ''}` : 'Stack –'),
+      el('div', { class: 'muted' }, h && h.effectiveStackBB !== null ? `Effective stack ${h.effectiveStackBB.toFixed(1)} bb` : 'Effective stack –')));
+  const boardCards = h?.board ?? [];
+  const board = el('div', { class: 'boardwrap' },
+    el('div', { class: 'label' }, h ? `Board · ${h.phase === 'complete' ? 'hand complete' : h.phase}` : 'Board'),
+    el('div', { class: 'cards', id: 'board' }, ...Array.from({ length: 5 }, (_, i) => playingCard(boardCards[i] ?? null, 'md', true))),
+    el('div', { class: 'potline' }, h ? `Pot ${chips(h.pot)}` : 'No hand in progress'));
+  root.append(el('div', { class: 'card tablecard' }, hero, board));
+
+  // ---- decision: never blank ----
+  const dec = el('div', { class: `card decision ${banner.tone}`, id: 'decision' });
+  dec.append(el('div', { class: 'label' }, banner.kind === 'action' ? 'Recommended action' : 'Decision'));
+  dec.append(el('div', { class: banner.kind === 'action' ? 'big' : 'msg' }, `${banner.provisional ? '… ' : ''}${banner.title}`));
+  if (banner.sub) dec.append(el('div', { class: 'sub' }, banner.sub));
+  if (l && l.decision && banner.kind === 'action') {
+    const d = l.decision;
+    const why = explanation(l, true);
+    if (why.length) dec.append(el('div', { class: 'label', style: 'margin-top:12px' }, 'Why'), el('ul', { class: 'why' }, ...why.map((w) => el('li', {}, w))));
+    const ct = el('table', {}, el('tr', {}, el('th', {}, 'Option'), el('th', { class: 'num' }, 'EV (chips)'), el('th', { class: 'num' }, '± SE'), el('th', { class: 'num' }, 'Play %')));
     const best = Math.max(...d.candidates.map((c) => c.ev ?? -Infinity));
     for (const c of d.candidates) ct.append(el('tr', {}, el('td', {}, c.label), el('td', { class: 'num' }, c.ev === null ? '–' : `${c.ev.toFixed(1)}${c.ev === best ? '' : ` (${(c.ev - best).toFixed(1)})`}`), el('td', { class: 'num' }, c.evSe === null ? '–' : c.evSe.toFixed(1)), el('td', { class: 'num' }, pct(c.freq))));
-    grid.append(card('Decision', el('div', { class: 'big' }, `${d.provisional ? '… ' : ''}${d.label}`),
-      dl([
-        ['Computed for', l.recommendation.context ? `${l.recommendation.context.street}, state version ${l.recommendation.context.version}, ${l.recommendation.context.canCheck ? 'check is free' : `${l.recommendation.context.toCall} to call`}, ${l.recommendation.context.opponents} opponent(s)` : '–'],
-        ['Equity', d.equity ? `${pct(d.equity.equity, 1)} ± ${(196 * d.equity.stdErr).toFixed(1)} vs ${d.equity.opponents} (win ${pct(d.equity.win)}, tie ${pct(d.equity.tie)})` : '–'],
-        ['Branch', d.mode],
-        ['Compute', `${d.computeMs.toFixed(0)} ms, ${d.samples} samples`],
-      ]),
-      el('div', { class: 'scroll' }, ct), el('p', { class: 'muted' }, d.uncertainty)));
-    grid.append(card('Why',
-      el('ul', {}, ...d.basis.map((b) => el('li', {}, b))),
-      d.adjustments.length ? el('ul', { class: 'good' }, ...d.adjustments.map((b) => el('li', {}, b))) : el('p', { class: 'muted' }, 'No opponent-specific adjustment.'),
-      el('h2', {}, 'Opponent range estimates'),
-      el('ul', {}, ...d.ranges.map((r) => el('li', {}, `${r.name} [${r.line}]: ${r.summary}`)))));
+    const more = el('details', { class: 'more' }, el('summary', {}, 'All options considered, full reasoning and opponent ranges'), ct,
+      el('ul', { class: 'why' }, ...explanation(l).map((w) => el('li', {}, w))),
+      d.ranges.length ? el('ul', { class: 'why' }, ...d.ranges.map((r) => el('li', {}, `${r.name} [${r.line}]: ${r.summary}`))) : null,
+      el('p', { class: 'muted' }, `${d.mode} · ${d.samples} samples · ${d.computeMs.toFixed(0)} ms. EV is shown only where the engine computed one.`));
+    more.open = liveMoreOpen;
+    more.addEventListener('toggle', () => { liveMoreOpen = more.open; });
+    dec.append(more);
   }
-  root.append(grid);
+  root.append(dec);
+
+  if (!l) return;
+
+  // ---- context, players, timeline ----
+  const actor = actorLine(l);
+  const ctx = card('Game', el('div', { class: `actor ${actor.tone}`, id: 'actor' }, actor.text, actor.verified ? tag('confirmed', 'good') : null), dl(contextRows(l).map(([k, v]) => [k, v])));
+  const rows = playerRows(l);
+  const plist = el('div', { class: 'players', id: 'players' }, el('div', { class: 'prow head' }, el('span', {}, 'Player'), el('span', {}, 'Pos'), el('span', { class: 'num' }, 'Stack'), el('span', {}, 'Last action'), el('span', {}, 'Status')));
+  for (const p of rows) {
+    plist.append(el('div', { class: `prow ${p.kind}${p.isHero ? ' hero' : ''}` },
+      el('span', { class: 'pname', title: p.name }, p.name, p.isHero ? tag('you', 'accent') : null),
+      el('span', {}, p.position), el('span', { class: 'num' }, p.stack), el('span', { class: 'pact' }, p.lastAction),
+      el('span', { class: 'pstatus' }, p.status)));
+  }
+  const tl = el('div', { class: 'tl', id: 'timeline' });
+  for (const e of recentTimeline(l, 14)) {
+    if (e.street) tl.append(el('div', { class: 'tlstreet' }, e.street));
+    tl.append(el('div', { class: `tlrow${e.uncertain ? ' bad' : ''}` }, e.text, e.deduced ? tag(e.uncertain ? 'deduced, unconfirmed' : 'deduced', e.uncertain ? 'bad' : 'warn') : null));
+  }
+  root.append(el('div', { class: 'livecols' }, ctx, card('Players', plist), card('Recent actions', l.timeline.length ? tl : el('p', { class: 'muted' }, 'No actions yet.'))));
 }
+let liveMoreOpen = false;
 
 // ---- opponents ------------------------------------------------------------------
 
@@ -204,13 +239,15 @@ async function renderDiag(): Promise<void> {
   for (const r of rows) t.append(el('tr', {}, el('td', {}, new Date(r.ts).toLocaleTimeString()), el('td', { class: r.level === 'error' ? 'bad' : r.level === 'warn' ? 'warn' : 'muted' }, r.level), el('td', {}, r.source), el('td', {}, r.message + (r.data ? ` ${JSON.stringify(r.data).slice(0, 300)}` : ''))));
   const health = live ? Object.entries(live.observation.health) : [];
   const fresh = live && Date.now() - live.ts < 20000 ? live : null;
-  const grid = el('div', { class: 'grid' });
+  const grid = el('div', { class: 'stack' });
   if (fresh) {
     const l = fresh;
+    const problems = Object.values(l.readiness).filter((i) => i.level === 'bad').length;
+    grid.append(el('div', { class: 'statusline' }, el('span', { class: `statuspill ${problems ? 'bad' : l.tracker.warnings.length ? 'warn' : 'good'}` }, problems ? `${problems} check(s) failing` : l.tracker.warnings.length ? `${l.tracker.warnings.length} warning(s)` : 'All checks pass'), el('span', { class: 'muted' }, l.status)));
     const who = (seat: number | null) => { const p = l.participation.find((x) => x.seat === seat); return seat === null ? 'nobody' : p ? `seat ${seat} · ${p.position ?? '–'} · ${p.name}` : `seat ${seat}`; };
     const last = l.timeline[l.timeline.length - 1];
-    grid.append(card('State checks', dl(indicatorRows(l)), el('p', { class: 'muted' }, `Heuristic score used by the click guard: ${l.tracker.confidence.toFixed(2)} (1 minus 0.15 per open warning, 0.3 when blocked; not a probability).`)));
-    grid.append(card('Turn tracking', dl([
+    grid.append(section('checks', 'State checks', true, dl(indicatorRows(l)), el('p', { class: 'muted' }, `Heuristic score used by the click guard: ${l.tracker.confidence.toFixed(2)} (1 minus 0.15 per open warning, 0.3 when blocked; not a probability).`)));
+    grid.append(section('turn', 'Turn tracking', true, dl([
       ['Observed actor (table)', who(l.tracker.observedActor)],
       ['Predicted actor (engine)', who(l.tracker.predictedActor)],
       ['Actor verified', l.tracker.turnStatus === 'agree' ? el('span', { class: 'good' }, 'yes: both agree') : l.tracker.turnStatus === 'disagree' ? el('span', { class: 'bad' }, 'NO: they disagree') : l.tracker.turnStatus === 'unobserved' ? el('span', { class: 'warn' }, 'not verified: the table shows no acting seat') : '–'],
@@ -225,15 +262,26 @@ async function renderDiag(): Promise<void> {
       tl.append(el('div', { class: e.uncertain ? 'bad' : e.inferred ? 'warn' : '' }, `${e.text} · ${e.name}${e.uncertain ? ' · deduced, UNCONFIRMED' : e.inferred ? ' · deduced' : ''}`, e.note ? el('span', { class: 'muted' }, ` (${e.note})`) : null));
     }
     if (l.hand && l.hand.phase !== 'complete') tl.append(el('div', { class: 'muted' }, `Next: ${who(l.tracker.predictedActor)}${l.tracker.turnStatus === 'agree' ? ' (verified)' : l.tracker.turnStatus === 'disagree' ? ` (table shows ${who(l.tracker.observedActor)})` : ' (not verified)'}`));
-    grid.append(card('Action timeline (current hand)', l.timeline.length ? tl : el('p', { class: 'muted' }, 'No hand is being tracked.'), el('p', { class: 'muted' }, 'Entries marked "deduced" were not displayed by the table: they follow from the rules (see the note). Nothing else is added.')));
+    grid.append(section('timeline', 'Action timeline (current hand)', true, l.timeline.length ? tl : el('p', { class: 'muted' }, 'No hand is being tracked.'), el('p', { class: 'muted' }, 'Entries marked "deduced" were not displayed by the table: they follow from the rules (see the note). Nothing else is added.')));
     const pt = el('table', {}, el('tr', {}, el('th', {}, 'Seat'), el('th', {}, 'Player'), el('th', {}, 'Pos'), el('th', {}, 'In this hand'), el('th', {}, 'Betting'), el('th', {}, 'Presence'), el('th', { class: 'num' }, 'Stack'), el('th', { class: 'num' }, 'Street'), el('th', { class: 'num' }, 'Hand')));
     for (const p of l.participation) pt.append(el('tr', {}, el('td', {}, String(p.seat)), el('td', {}, p.name + (p.isHero ? ' (hero)' : '')), el('td', {}, p.position ?? ''),
       el('td', {}, p.dealtIn ? (p.folded ? 'folded' : 'contesting') : p.sittingOut ? 'sitting out' : 'waiting for next hand'),
       el('td', {}, !p.dealtIn ? '–' : p.folded ? '–' : p.allIn ? 'all-in' : p.canAct ? 'can act' : '–'),
       el('td', { class: p.left || p.disconnected ? 'warn' : '' }, p.left ? 'no longer visible' : p.disconnected ? 'disconnected' : 'present'),
       el('td', { class: 'num' }, p.stack === null ? '?' : String(p.stack)), el('td', { class: 'num' }, p.streetCommit ? String(p.streetCommit) : ''), el('td', { class: 'num' }, p.totalCommit ? String(p.totalCommit) : '')));
-    grid.append(card('Player participation', el('div', { class: 'scroll' }, pt)));
-    if (l.tracker.discrepancies.length) grid.append(card('Discrepancies this hand', el('ul', {}, ...l.tracker.discrepancies.map((x) => el('li', { class: x.blocking ? 'bad' : 'warn' }, `[${x.kind}] ${x.street}, after ${x.eventCount} events: ${x.message}`)))));
+    grid.append(section('participation', 'Player participation (per-seat state)', false, el('div', { class: 'scroll' }, pt)));
+    grid.append(section('system', 'System', false, dl([
+      ['Mode', l.estop ? 'EMERGENCY STOP' : l.acting ? 'autonomous (acting)' : l.mode],
+      ['Engine status', l.status],
+      ['Phase', l.tracker.phase],
+      ['Hand id', l.hand?.handId ?? '–'],
+      ['Decision deadline', l.deadlineMs !== null ? `${(l.deadlineMs / 1000).toFixed(1)}s${l.observation.timeRemainingMs === null ? ' (assumed clock)' : ''}` : '–'],
+      ['Last execution', l.lastExecution ? `${l.lastExecution.status}: ${l.lastExecution.action} (${l.lastExecution.reason})` : '–'],
+      ['Hands tracked', String(l.tracker.handsSeen)],
+      ['Recommendation state', `${l.recommendation.state}${l.recommendation.context ? ` · ${l.recommendation.context.key}` : ''}`],
+    ])));
+    grid.append(section('issues', `Tracker messages this hand (${l.tracker.issues.length})`, l.tracker.issues.length > 0, l.tracker.issues.length ? el('ul', { class: 'warn' }, ...l.tracker.issues.map((i) => el('li', {}, i))) : el('p', { class: 'muted' }, 'None.')));
+    if (l.tracker.discrepancies.length) grid.append(section('discrepancies', `Discrepancies this hand (${l.tracker.discrepancies.length})`, true, el('ul', {}, ...l.tracker.discrepancies.map((x) => el('li', { class: x.blocking ? 'bad' : 'warn' }, `[${x.kind}] ${x.street}, after ${x.eventCount} events: ${x.message}`)))));
   }
   // ---- debug bundle ----
   const scope = el('select', { id: 'bundle-scope' }, el('option', { value: '1' }, 'Most recent hand'), el('option', { value: '5' }, 'Last 5 hands'), el('option', { value: '20' }, 'Last 20 hands'), el('option', { value: 'all' }, 'Everything stored'));
@@ -268,17 +316,17 @@ async function renderDiag(): Promise<void> {
   });
   const clearFrames = el('button', { class: 'btn', type: 'button' }, 'Delete recorded frames');
   clearFrames.addEventListener('click', async () => { await storage.clear(['frames', 'meta']); bundleMsg.textContent = 'Recorded frames deleted.'; });
-  grid.append(card('Debug bundle',
+  grid.append(section('bundle', 'Debug bundle (record, export)', true,
     el('p', { class: 'muted' }, 'A local recording of what the table showed (seats, names, stacks, bets, board, your own cards, buttons) and what the reconstruction made of it, one frame per change. It is stored in this browser only and leaves it only when you export the file yourself. It contains no passwords, cookies or tokens, and no opponent cards other than those shown at showdown.'),
     el('label', {}, recOn, ` Record while a table is open${fresh ? ` (${fresh.recorder.recorded} frames this session, ${fresh.recorder.dropped} dropped)` : ''}`),
     el('label', { for: 'bundle-scope' }, 'What to export'), scope,
     el('label', {}, anon, ' Replace player names and the table id with placeholders'),
     el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px' }, previewBtn, exportBtn, clearFrames), bundleMsg, preview));
-  root.append(grid, el('div', { class: 'grid', style: 'margin-top:12px' },
-    card('Page elements (last read)', health.length ? el('div', {}, ...health.map(([k, ok]) => el('span', { class: `pill ${ok ? 'good' : 'bad'}` }, `${k}: ${ok ? 'found' : 'MISSING'}`))) : el('p', { class: 'muted' }, 'No live table.'),
+  root.append(grid, el('div', { class: 'stack', style: 'margin-top:12px' },
+    section('elements', 'Page elements (last read)', false, health.length ? el('div', {}, ...health.map(([k, ok]) => el('span', { class: `pill ${ok ? 'good' : 'bad'}` }, `${k}: ${ok ? 'found' : 'MISSING'}`))) : el('p', { class: 'muted' }, 'No live table.'),
       el('p', { class: 'muted' }, 'A missing element usually means PokerNow changed its markup. Selectors can be overridden in Settings without rebuilding.'),
       live?.observation.problems.length ? el('ul', { class: 'warn' }, ...live.observation.problems.map((p) => el('li', {}, p))) : null)),
-  card(`Log · ${rows.length} most recent`, rows.length ? el('div', { class: 'scroll' }, t) : el('p', { class: 'muted' }, 'Empty.')));
+  section('log', `Log · ${rows.length} most recent`, false, rows.length ? el('div', { class: 'scroll' }, t) : el('p', { class: 'muted' }, 'Empty.')));
 }
 
 // ---- settings ------------------------------------------------------------------
@@ -395,7 +443,7 @@ async function init(): Promise<void> {
     }
     if (area === 'local' && c.settings) { settings = sanitizeSettings(c.settings.newValue); renderStop(); }
   });
-  setInterval(() => { if (activeTab === 'live') renderLive(); }, 5000);
+  setInterval(() => { if (activeTab === 'live') renderLive(); }, 2000);
   renderStop();
   renderTab();
 }

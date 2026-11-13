@@ -1,10 +1,34 @@
 # Game-state reconstruction, turn tracking and diagnostics
 
-Version 0.4.0. Code: `src/bot/adapter/tracker.ts`, `src/bot/ext/controller.ts`, `src/bot/diag/`. Tests: `tests/bot/tracking.test.ts`.
+Version 0.5.0. Code: `src/bot/adapter/tracker.ts`, `src/bot/ext/controller.ts`, `src/bot/diag/`. Tests: `tests/bot/tracking.test.ts`.
 
-**Status.** Everything here passes automated tests on synthetic tables and a browser check against a local stand-in table. None of it has been confirmed on a live PokerNow table. The root-cause analysis below is consistent with the reports from live play, but no log of those hands exists, so it is a hypothesis until a debug bundle from a real table confirms it. Section 8 says how to collect one.
+**Status.** 0.5.0 reconstructs one real recording (5 hands) exactly, with no blocker, no warning and no deduced action, and is otherwise tested on synthetic tables. One recording is not a soak: section 0 lists what it did not contain.
 
-## 1. Root-cause analysis
+## 0. What the first real recording showed (2026-11-13, v0.5.0)
+
+A debug bundle from a recommendation-only session on a no-money PokerNow table (5 hands, 118 frames, extension 0.4.0) was replayed. It is kept, with names and the table id replaced, as `tests/bot/fixtures/live-2026-11-13.json`. Facts read directly from the recorded observations:
+
+| Recorded fact | Consequence |
+|---|---|
+| PokerNow marks folds with the class `fold` and removes the seat's cards. Every fold in the recording is displayed. | The 0.4.0 hypothesis "the fold class is not recognised" was **wrong for the live site**. The selector works. |
+| The acting-seat highlight (`decision-current`) stays on the seat that has just acted for 0.2 to 0.9 s after its chips or fold are drawn, then moves. | 0.4.0 read "highlight is not on the engine's next seat" as "the action passed that seat" and deduced folds for everyone still to act. The hand was declared complete while it was still being played (hands 2, 3, 4, 5). |
+| A sitting-out player is drawn with `fold` (and `offline`), no cards and no chips from the first frame of the hand. | 0.3.0 and 0.4.0 counted that seat as dealt in. In hand 3 it was given the big blind, Hero's real big blind was read as a call, and the round was closed when the small blind completed: "table says it is Hero's turn, engine expects no further action", engine pot 12 against 10 on the table, a stack off by exactly one big blind. |
+| When the small-blind seat sits out, only a big blind is posted (hand 5: pot 2 at the start, the first dealt seat left of the button has 2 in front). | Dead small blind was not modelled; the engine posted a small blind that did not exist. |
+| The pot shown is all chips including current bets (`total N`). | Engine pot and table pot can be compared exactly; after the fix they are equal in every frame of the recording where someone is to act. |
+| Seat numbers are relative to the viewer (Hero is seat 1 once seated). | Stable within a session; nothing to change. |
+| Hero's turn was shown in six frames: n=57 to 60 (hand 3, big-blind option with QcQd), n=86 (hand 4, small blind facing a raise, 7 to call), n=106 (hand 5, button facing 12). None produced a recommendation live. In hands 4 and 5 the next frame, 80 to 90 ms later, shows Hero folded. | All six now reconstruct with table and engine agreeing and the buttons matching. An 80 ms turn is too short to read a recommendation whatever the software does; that looks like a pre-selected fold (inference, not recorded). |
+
+Fixes in 0.5.0, each covered by a test that failed on 0.4.0 against this recording:
+
+1. **Dealt in means cards or chips.** A seat with neither at the first frame is not in the hand, whatever its classes say.
+2. **A lagging highlight is not evidence.** A highlight (or Hero's buttons) on a seat that has nothing to decide is treated as "not moved yet" for up to 1.5 s and only then as a disagreement. Deductions are also withdrawn if they would end the hand while the page still shows someone acting.
+3. **Blinds are read from the chips.** The standard layout or a dead small blind is chosen by which one the visible chips and pot support (`noSmallBlind` in the rules engine).
+
+Not in the recording, so still unverified: antes, straddles, a dead big blind, run-it-twice, all-in run-outs with side pots, Hero's own bet entry, and tables with fewer than six dealt in.
+
+## 1. Root-cause analysis (as written for 0.4.0, before any real recording)
+
+> Section 0 supersedes this where they differ. Defect 1 below was not the cause on the live site; defects 2 to 4 were real code defects and their fixes stand.
 
 The reports were: PokerNow shows "YOUR TURN" but the bot believes another seat must act and shows nothing; pot off by 1 or 2 chips (19 vs 18, 258 vs 256); a stack off by 2 (98 vs 100); "valid" hands with confidence 0.70 or 0.85.
 
@@ -56,13 +80,15 @@ Each observation is explained as a sequence of legal actions. Every action recor
 | `fold-display` | the seat is drawn as folded | no |
 | `cards-removed` | the seat's cards disappeared while someone is still acting | no |
 | `turn-passed` (check) | the action moved past the seat, checking was free, stack unchanged | no |
-| `turn-passed` (fold) | the action moved past the seat, it faced a bet, no chips added, stack unchanged, table settled | **yes** |
+| `turn-passed` (fold) | a seat that still has a decision to make is highlighted beyond this one, this one faced a bet, added no chips, its stack is unchanged, the table is settled. Not needed in the real recording (PokerNow displays folds); kept for missed frames | **yes** |
 | `stack-change` | next street is out and the stack fell by exactly the call | **yes** |
 | `street-advanced` | next street is out and the stack is unchanged (fold), or checking was free (check) | fold: **yes** |
 | `showdown-evidence` | opponents' cards are face up on the river | **yes** |
 | `hand-ended` | the next hand began before the last action was seen | **yes, unconfirmed** |
 
 Because actions come from the difference between the engine and the table, reading the same table again adds nothing, and several actions between two reads are replayed in order.
+
+**Highlight lag.** On PokerNow the highlight stays on the seat that just acted for 0.2 to 0.9 s. The tracker therefore asks whether the highlighted seat still has something to decide in the reconstructed hand. If not, the highlight is "lagging": it is no evidence about other seats, `turnStatus` is `unobserved`, and only after 1.5 s does it become a disagreement.
 
 **Settling.** An observation counts as settled when nothing relevant changed for 120 ms (two consecutive reads). Deduced folds and all mismatch findings wait for a settled table, so a half-drawn update is not mistaken for a fact. The cost is at most one poll interval.
 
@@ -148,7 +174,7 @@ The replay feeds the recorded observations through the same `HandTracker` and pr
 
 ## 8. Next live test (recommendation-only)
 
-1. `npm run build`, then in `chrome://extensions` press the reload arrow on the extension (or Load unpacked → `dist/`). The version should read 0.4.0. Reload the PokerNow tab.
+1. `npm run build`, then in `chrome://extensions` press the reload arrow on the extension (or Load unpacked → `dist/`). The version should read 0.5.0. Reload the PokerNow tab.
 2. Popup: mode **Recommend**. Leave authorisation off. Nothing is clicked in this mode.
 3. Open the dashboard, Diagnostics tab, and confirm "Record while a table is open" is ticked.
 4. Play 20 to 30 hands of a no-money game, including hands where you limp, are raised behind and act again, and hands in each blind.
@@ -164,7 +190,7 @@ What the first real bundle will settle: the real class names (fold, away, acting
 - Not verified on the live site. Synthetic fixtures show the logic is right for the situations they model, not that PokerNow presents those situations the way the fixtures assume.
 - The fold deduction relies on bets and stacks being read correctly. If stacks are displayed with a convention the adapter does not expect, deduced folds will be withheld and the reason shown.
 - A check is still deduced from "the action moved on, no chips, stack unchanged"; a fold with a free check looks the same unless the fold is displayed.
-- Dead blinds, missed-blind posts and straddles are not modelled. The new blind check turns these from silent errors into a visible blocker for that hand; it does not make them playable.
+- A dead small blind is handled (0.5.0). A dead big blind, missed-blind posts and straddles are not modelled. The new blind check turns these from silent errors into a visible blocker for that hand; it does not make them playable.
 - Two raises by the same players between two reads cannot be told from one; this is detected ("intermediate raises were missed") and invalidates the hand.
 - When a hand is blocked or invalid there is no recommendation for it. That is deliberate.
 - Chip amounts are compared with a tolerance of 0.011 (tables with cent chips); arithmetic is floating point rounded to cents on read, not integer.

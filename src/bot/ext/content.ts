@@ -9,6 +9,7 @@ import { PokerNowDom, SELECTORS, SelectorMap } from '../adapter/pokernow/dom';
 import { sanitizeProfile } from '../opponents/profile';
 import { LiveController } from './controller';
 import { BotMessage, DEFAULT_SETTINGS, LiveState, sanitizeSettings, Settings } from './records';
+import { actorLine, cardView, chips, decisionBanner, statusPill } from './view';
 
 const POLL_MS = 250;
 
@@ -22,86 +23,129 @@ function send(msg: BotMessage): void {
   try { chrome.runtime.sendMessage(msg, () => void chrome.runtime.lastError); } catch { /* extension reloaded: ignore */ }
 }
 
-// ---- in-page panel (shadow DOM, bottom-left, collapsible, never over the action buttons) ----
+// ---- in-page overlay (closed shadow DOM; small, movable, minimisable) ----
+// Shows only: hero cards, position, pot, players remaining, current actor, and the recommendation or
+// the reason there is none. Everything else is on the dashboard.
+
+interface PanelUi { left: number; top: number; collapsed: boolean }
 
 class Panel {
   private root: ShadowRoot | null = null;
+  private host: HTMLElement | null = null;
   private body: HTMLElement | null = null;
-  private collapsed = false;
+  private ui: PanelUi = { left: 8, top: 8, collapsed: false };
+  private last: LiveState | null = null;
   constructor(private readonly onStop: () => void) {}
+
+  private place(): void {
+    if (!this.host) return;
+    const maxL = Math.max(0, window.innerWidth - 60), maxT = Math.max(0, window.innerHeight - 30);
+    this.ui.left = Math.min(Math.max(0, this.ui.left), maxL); this.ui.top = Math.min(Math.max(0, this.ui.top), maxT);
+    this.host.style.left = `${this.ui.left}px`; this.host.style.top = `${this.ui.top}px`;
+  }
+  private saveUi(): void { try { void chrome.storage.local.set({ panelUi: this.ui }); } catch { /* extension reloaded */ } }
 
   mount(): void {
     if (this.root) return;
     const host = document.createElement('div');
     host.id = 'poker-bot-panel-host';
     host.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483000;';
+    this.host = host;
     this.root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = `
-      .p{font:12px/1.35 system-ui,sans-serif;color:#e8eaed;background:#16181dee;border:1px solid #3a3f4a;border-radius:8px;width:250px;box-shadow:0 2px 10px #0008}
-      .h{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;user-select:none}
-      .dot{width:9px;height:9px;border-radius:50%;background:#888}.ok{background:#3ecf6e}.warn{background:#f0b429}.bad{background:#ef5350}
-      .t{flex:1;font-weight:600}.b{padding:0 8px 8px;display:grid;gap:4px}
-      .row{display:flex;justify-content:space-between;gap:8px}.k{color:#9aa0aa}.act{font-size:14px;font-weight:700;color:#8ab4ff}
-      .stop{background:#c62828;color:#fff;border:0;border-radius:5px;padding:5px 8px;font-weight:700;cursor:pointer;width:100%}
-      .stop:focus-visible{outline:2px solid #fff}.small{color:#9aa0aa;font-size:11px;overflow-wrap:anywhere}
-      .blk{font-weight:700;color:#f0b429}.stat{color:#e8eaed;overflow-wrap:anywhere}
+      .p{font:12px/1.35 system-ui,sans-serif;color:#e8eaed;background:#15171cf2;border:1px solid #333944;border-radius:10px;width:232px;box-shadow:0 4px 14px #000a}
+      .h{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:move;user-select:none;touch-action:none}
+      .dot{width:8px;height:8px;border-radius:50%;background:#7c828d;flex:none}.good{background:#3ecf6e}.warn{background:#f0b429}.bad{background:#ef5350}
+      .t{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .ib{font:inherit;color:#9aa0aa;background:transparent;border:0;border-radius:4px;padding:0 5px;cursor:pointer;line-height:1.4}.ib:hover{color:#fff;background:#2a2f39}
+      .ib:focus-visible,.stop:focus-visible{outline:2px solid #8ab4ff}
+      .b{padding:2px 10px 10px;display:grid;gap:7px}
+      .top{display:flex;align-items:center;gap:8px}
+      .cards{display:flex;gap:3px}
+      .pc{display:inline-grid;grid-template-rows:1fr 1fr;place-items:center;width:26px;height:36px;border-radius:4px;background:#f5f2ea;color:#14161b;font-weight:700;font-size:13px;line-height:1}
+      .pc.red{color:#c0271f}.pc.none{background:transparent;border:1px dashed #3a404b}
+      .pos{font-size:11px;font-weight:700;color:#15171c;background:#8ab4ff;border-radius:4px;padding:0 5px}
+      .meta{display:grid;gap:1px;min-width:0}.k{color:#9aa0aa}
+      .actor{color:#9aa0aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.actor.me{color:#8ab4ff;font-weight:600}
+      .act{font-size:19px;font-weight:700;color:#8ab4ff;line-height:1.15}
+      .msg{font-size:13px;font-weight:600}.msg.bad{color:#ef5350}.msg.warn{color:#f0b429}
+      .sub{color:#9aa0aa;font-size:11px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+      .stop{background:transparent;color:#ef5350;border:1px solid #6a2b2a;border-radius:6px;padding:4px 8px;font:inherit;font-weight:700;cursor:pointer;width:100%}
+      .stop:hover{background:#c62828;color:#fff}.stop:disabled{color:#9aa0aa;border-color:#333944;cursor:default;background:transparent}
     `;
     const p = document.createElement('div');
     p.className = 'p';
     const head = document.createElement('div');
     head.className = 'h';
-    head.innerHTML = '<span class="dot"></span><span class="t">Poker bot</span><span class="m"></span>';
-    head.addEventListener('click', () => { this.collapsed = !this.collapsed; if (this.body) this.body.style.display = this.collapsed ? 'none' : 'grid'; });
+    head.title = 'Drag to move';
+    const dot = document.createElement('span'); dot.className = 'dot';
+    const title = document.createElement('span'); title.className = 't'; title.textContent = 'Poker bot';
+    const min = document.createElement('button'); min.className = 'ib'; min.type = 'button'; min.setAttribute('aria-label', 'Minimise or expand the panel');
+    head.append(dot, title, min);
+    min.addEventListener('click', (e) => { e.stopPropagation(); this.ui.collapsed = !this.ui.collapsed; this.saveUi(); if (this.last) this.render(this.last); else this.applyCollapsed(); });
+    // Drag by the header (pointer events; position is remembered).
+    let drag: { x: number; y: number; left: number; top: number } | null = null;
+    head.addEventListener('pointerdown', (e) => { if ((e.target as HTMLElement).tagName === 'BUTTON') return; drag = { x: e.clientX, y: e.clientY, left: this.ui.left, top: this.ui.top }; head.setPointerCapture(e.pointerId); });
+    head.addEventListener('pointermove', (e) => { if (!drag) return; this.ui.left = drag.left + e.clientX - drag.x; this.ui.top = drag.top + e.clientY - drag.y; this.place(); });
+    const end = () => { if (drag) { drag = null; this.saveUi(); } };
+    head.addEventListener('pointerup', end); head.addEventListener('pointercancel', end);
     this.body = document.createElement('div');
     this.body.className = 'b';
     p.append(head, this.body);
     this.root.append(style, p);
     document.documentElement.appendChild(host);
+    try { void chrome.storage.local.get('panelUi').then((r) => { const u = r.panelUi as Partial<PanelUi> | undefined; if (u && Number.isFinite(u.left) && Number.isFinite(u.top)) { this.ui = { left: Number(u.left), top: Number(u.top), collapsed: u.collapsed === true }; this.place(); this.applyCollapsed(); } }); } catch { /* defaults */ }
+    this.applyCollapsed();
   }
 
-  unmount(): void { document.getElementById('poker-bot-panel-host')?.remove(); this.root = null; this.body = null; }
+  private applyCollapsed(): void {
+    if (!this.root || !this.body) return;
+    this.body.style.display = this.ui.collapsed ? 'none' : 'grid';
+    const b = this.root.querySelector('.ib') as HTMLElement;
+    b.textContent = this.ui.collapsed ? '▸' : '–';
+  }
+
+  unmount(): void { document.getElementById('poker-bot-panel-host')?.remove(); this.root = null; this.body = null; this.host = null; }
 
   render(l: LiveState): void {
     if (!this.root || !this.body) return;
+    this.last = l;
+    const now = Date.now();
+    const pill = statusPill(l, now);
+    const banner = decisionBanner(l, now);
     const dot = this.root.querySelector('.dot') as HTMLElement;
-    const r = l.readiness;
-    const worst = [r.observation, r.consistency, r.turn, r.legal, r.decision].some((i) => i.level === 'bad') ? 'bad' : [r.observation, r.consistency, r.turn, r.legal].some((i) => i.level === 'warn') ? 'warn' : l.hand ? 'ok' : '';
-    dot.className = `dot ${l.estop ? 'bad' : worst}`;
-    (this.root.querySelector('.m') as HTMLElement).textContent = l.estop ? 'STOPPED' : l.acting ? 'AUTO' : l.mode;
-    const rows: [string, string][] = [];
-    const h = l.hand;
-    if (h) {
-      rows.push(['Hand', `${h.heroCards?.join(' ') ?? '--'} ${h.heroPosition ? `(${h.heroPosition})` : ''}`]);
-      rows.push(['Board', h.board.join(' ') || h.street]);
-      rows.push(['Pot', `${h.pot} (${(h.pot / h.bigBlind).toFixed(1)}bb)`]);
-      if (h.counts) rows.push(['Players', `${h.counts.contesting}/${h.counts.dealtIn} in · ${h.counts.headsUpTable ? 'HU table' : h.counts.potType}`]);
-      const who = (seat: number | null) => { const p = h.players.find((x) => x.seat === seat); return seat === null ? '–' : p ? `${p.position ?? `seat ${seat}`}` : `seat ${seat}`; };
-      rows.push(['Turn', l.tracker.turnStatus === 'agree' ? `${who(l.tracker.predictedActor)} ✓` : l.tracker.turnStatus === 'disagree' ? `table ${who(l.tracker.observedActor)} ≠ engine ${who(l.tracker.predictedActor)}` : l.tracker.turnStatus === 'unobserved' ? `${who(l.tracker.predictedActor)} (engine only)` : '–']);
-    }
-    const d = l.decision;
-    if (d?.equity) rows.push(['Equity', `${(100 * d.equity.equity).toFixed(1)}% ±${(196 * d.equity.stdErr).toFixed(1)}`]);
+    dot.className = `dot ${pill.tone === 'muted' || pill.tone === 'accent' ? '' : pill.tone}`;
+    dot.title = `${pill.label}: ${pill.detail}`;
+    // Minimised: the header alone still carries the recommendation or status.
+    (this.root.querySelector('.t') as HTMLElement).textContent = this.ui.collapsed ? banner.title : `Poker bot · ${pill.label}`;
+    this.applyCollapsed();
+    const mk = (tagName: string, cls: string, text = ''): HTMLElement => { const e = document.createElement(tagName); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
     this.body.textContent = '';
-    for (const [k, v] of rows) {
-      const r = document.createElement('div'); r.className = 'row';
-      const a = document.createElement('span'); a.className = 'k'; a.textContent = k;
-      const b = document.createElement('span'); b.textContent = v;
-      r.append(a, b); this.body.append(r);
+    const h = l.hand;
+    const top = mk('div', 'top');
+    const cards = mk('div', 'cards');
+    for (let i = 0; i < 2; i++) {
+      const c = h?.heroCards?.[i];
+      if (!c) { cards.append(mk('span', 'pc none')); continue; }
+      const v = cardView(c);
+      const pc = mk('span', `pc${v.red ? ' red' : ''}`); pc.setAttribute('aria-label', v.label);
+      pc.append(mk('span', '', v.rank), mk('span', '', v.suit));
+      cards.append(pc);
     }
-    if (l.recommendation.state === 'blocked') {
-      const w = document.createElement('div'); w.className = 'blk'; w.textContent = 'Decision unavailable — state reconciliation required.';
-      const why = document.createElement('div'); why.className = 'small'; why.textContent = l.recommendation.reason ?? '';
-      this.body.append(w, why);
-    }
-    if (d && l.mode !== 'manual') {
-      const a = document.createElement('div'); a.className = 'act'; a.textContent = `${d.provisional ? '… ' : ''}${d.label}`;
-      const s = document.createElement('div'); s.className = 'small';
-      s.textContent = d.candidates.filter((c) => c.freq > 0.01 || c.ev !== null).slice(0, 6).map((c) => `${c.label}${c.ev !== null ? ` ${c.ev >= 0 ? '+' : ''}${c.ev.toFixed(0)}` : ''}${c.freq > 0.01 && c.freq < 0.99 ? ` ${(100 * c.freq).toFixed(0)}%` : ''}`).join(' · ');
-      this.body.append(a, s);
-    }
-    if (l.recommendation.state !== 'blocked') { const st = document.createElement('div'); st.className = d ? 'small' : 'stat'; st.textContent = l.status; this.body.append(st); }
+    const meta = mk('div', 'meta');
+    const line1 = mk('div', '');
+    if (h?.heroPosition) { line1.append(mk('span', 'pos', h.heroPosition), document.createTextNode(' ')); }
+    line1.append(document.createTextNode(h ? `Pot ${chips(h.pot)}` : 'No hand'));
+    meta.append(line1);
+    if (h?.counts) meta.append(mk('div', 'k', `${h.counts.contesting} of ${h.counts.dealtIn} players in`));
+    top.append(cards, meta);
+    this.body.append(top);
+    if (h && h.phase !== 'complete') { const a = actorLine(l); this.body.append(mk('div', `actor${a.tone === 'accent' ? ' me' : ''}`, a.text)); }
+    this.body.append(mk('div', banner.kind === 'action' ? 'act' : `msg ${banner.tone === 'bad' || banner.tone === 'warn' ? banner.tone : ''}`, `${banner.provisional ? '… ' : ''}${banner.title}`));
+    if (banner.sub) this.body.append(mk('div', 'sub', banner.sub));
     const stop = document.createElement('button');
-    stop.className = 'stop'; stop.textContent = l.estop ? 'Stopped (re-enable in the popup)' : 'EMERGENCY STOP';
+    stop.className = 'stop'; stop.type = 'button'; stop.textContent = l.estop ? 'Stopped (clear in the popup)' : 'Emergency stop';
     stop.disabled = l.estop;
     stop.addEventListener('click', (e) => { e.stopPropagation(); this.onStop(); });
     this.body.append(stop);

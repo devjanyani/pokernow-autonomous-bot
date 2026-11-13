@@ -1,89 +1,85 @@
 # Project progress
 
-Last updated: 2026-11-13. Branch `autonomous-bot`. Version 0.4.0.
+Last updated: 2026-11-13. Branch `autonomous-bot`. Version 0.5.0.
 
-Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md).
+Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md).
 
 ## Where things stand
 
-The extension has been used in recommend mode on real no-money PokerNow tables. It read the table, but turn tracking was unreliable: PokerNow showed Hero's turn while the bot expected another seat, with pot and stack differences of one call. Version 0.4.0 fixes the defects found in the code for that (see below) and adds a local recorder so the next live session produces evidence that can be replayed. **The fixes are tested on synthetic tables only. They have not been confirmed on a live table.**
+Version 0.5.0 fixes the turn-tracking failures found by replaying the first debug bundle from a real PokerNow table, and redesigns the dashboard and the in-page overlay. The real recording (5 hands, 118 frames) now reconstructs exactly: every Hero turn in it gets a recommendation, with no blocker, warning or deduced action. That is one six-handed session at 1/2 blinds; it is evidence for those situations, not a soak.
 
 | Milestone | State |
 |---|---|
 | Original repository preserved | Tag `checkpoint/pre-autonomous-bot-2026-11-12`; remote `origin` untouched |
-| Rules engine, 2 to 10 players, side pots | Done, tested |
-| Multiway equity and side-pot payouts | Done, tested |
-| Preflop and postflop strategy with EV estimates | Done, tested offline |
-| Opponent profiles, persistence | Done, tested |
-| Decision-time controller | Done, tested |
-| Offline simulator and benchmark report | Done |
-| Guarded action executor | Done, tested |
+| Rules engine, 2 to 10 players, side pots, dead small blind | Done, tested |
+| Multiway equity, strategy, opponent profiles, simulator | Done, tested offline (unchanged in 0.5.0) |
 | Chrome MV3 extension (content script, service worker, popup, dashboard) | Built; passes browser checks against a local stand-in table |
-| **v0.4.0: turn tracking, reconciliation, participation model, recommendation lifecycle** | Done, 36 regression tests |
-| **v0.4.0: diagnostic recorder, action timeline, debug bundle export, offline replay** | Done, tested, exercised in a real browser |
-| Confirmation of the tracking fixes on a live PokerNow table | **Not done: needs a debug bundle from a real session** |
+| Turn tracking, reconciliation, participation, recommendation lifecycle | Done; **verified against one real recording** plus synthetic tests |
+| Diagnostic recorder, timeline, debug bundle export, offline replay | Done; used on real data |
+| Dashboard and overlay redesign | Done; checked in Chromium and on the recorded states |
+| Further live sessions (other table sizes, antes, all-ins, long soak) | **Not done** |
 | Autonomous play on a live table | Not attempted; stay in recommend mode |
 
-## Version 0.4.0: what was wrong and what changed
+## Version 0.5.0: engine
 
-Full analysis: [docs/bot/TRACKING.md](docs/bot/TRACKING.md) section 1. The four defects, all in code that existed:
+Evidence: `debug_bundles/poker-bot-debug-2026-11-13T19-25-50-823Z.json` (kept local, git-ignored), anonymised copy `tests/bot/fixtures/live-2026-11-13.json`. Details in [TRACKING.md](docs/bot/TRACKING.md) section 0.
 
-1. A fold was recognised only from one unverified CSS class. An unrecognised fold left the engine waiting on that seat, so on Hero's turn the table said Hero and the engine said someone else.
-2. When the next street appeared with a seat's action unknown, a call was assumed. That put one call too many in the pot and took it off that player's stack (the reported 19 vs 18, 258 vs 256, 98 vs 100).
-3. Chip mismatches only lowered one confidence number, so such hands stayed "valid" at 0.85 or 0.70.
-4. The last recommendation stayed on screen after Hero's turn ended.
+| Confirmed failure in the recording | Root cause | Fix |
+|---|---|---|
+| Hand 3, frames 57 to 60: Hero is the big blind with QcQd, PokerNow shows "Your Turn" with a check button, bot says "engine expects no further action". Engine pot 12, table 10. | A sitting-out player (drawn with the `fold` class, no cards, no chips) was counted as dealt in and given the big blind. Hero's blind was read as a call, so the round "closed" when the small blind completed. | Dealt in means cards or chips at the first frame. |
+| Hands 2, 3 (flop), 4, 5: the hand is declared complete while it is still being played. Hero's turns at frames 86 and 106 get no recommendation. | PokerNow leaves the acting-seat highlight on the seat that just acted for 0.2 to 0.9 s. 0.4.0 read that as "the action passed everyone else" and folded them. | A highlight on a seat with nothing to decide is ignored for 1.5 s; deductions that would end a hand while someone is shown acting are withdrawn. |
+| Hand 5: engine pot 3, table 2. | The small-blind seat sat out and no small blind was posted. | Dead small blind in the rules engine; the blind layout is chosen from the chips shown. |
 
-These explain every reported symptom, but no log of the reported hands exists, so this is a hypothesis until a real bundle confirms it.
+Corrected from 0.4.0: its leading hypothesis (PokerNow's fold marker is not recognised) is not supported by the recording; folds are displayed and read. The 0.4.0 changes that stand are the removal of assumed calls, blockers instead of a confidence score, the recommendation lifecycle and the recorder.
 
-Changes: folds deduced from the rules (action passed a seat facing a bet, stack unchanged) and marked as deduced; no assumed calls; observed and predicted actor tracked separately; contradictions block the decision with a stated reason; per-seat participation model; recommendations tied to hand, street and state version and recomputed whenever the action returns to Hero; hand start waits for the blinds to match the button; free-check rule in one place; local recorder, timeline, debug bundle, replay.
+Emergency stop: confirmed in code and by test to be independent of tracking and recommendations. It only disarms clicking. The recording was made in recommend mode with the stop off.
+
+## Version 0.5.0: interface
+
+- **Live page**: one status pill (Ready, Waiting, Reconnecting, Needs attention, Paused); Hero's cards as cards with position, stack and effective stack; five board slots; one large recommended action (FOLD, CHECK, CALL n, BET n, RAISE TO n, ALL-IN) or a plain message (Waiting for your turn, Waiting for the next hand, You folded, You're all-in, Decision unavailable — turn tracking mismatch, Bot paused, Reading table information); whose turn it is and whether the table confirms it; pot, amount to call, blinds, opponents, heads-up or multiway; players list (name, position, stack, last action, status) with Hero, the actor, folded, all-in, not dealt in and sitting out distinguished, no horizontal scrolling; recent actions.
+- **Under the recommendation**, collapsed: every option with EV where the engine computed one, the full reasoning, opponent ranges. No value is shown that the engine did not produce.
+- **Diagnostics tab**: everything that was there, in collapsible sections (state checks, turn tracking, timeline, participation, system, tracker messages, discrepancies, debug bundle, page elements, log). Nothing was removed and no check was loosened.
+- **Overlay**: Hero cards, position, pot, players remaining, current actor, recommendation or status, emergency stop. Drag by the header; minimise with the header button (the header then shows the recommendation); position is remembered.
+- Presentation logic is in `src/bot/ext/view.ts` (pure functions, tested on the recorded states).
 
 ## Test results (2026-11-13)
 
 | Check | Command | Result |
 |---|---|---|
-| Full suite, original plus new | `npm test` | 933 of 933 pass (70 files, about 10 minutes) |
-| Bot suite only | `npm run test:bot` | 155 of 155 pass (119 earlier tests unchanged, 36 new in `tests/bot/tracking.test.ts`) |
-| Type check, lint, build | `npm run build`, `npx eslint "src/bot/**/*.ts"` | clean (lint: warnings only, no errors) |
-| Built extension in Chromium, recommend-only, stand-in table with fold markers hidden | `npm run bot:e2e:recommend` | 28 of 28 checks pass ([report](reports/e2e-extension-recommend-only-2026-11-13.md)) |
-| Built extension in Chromium including the autonomous phase on the stand-in table | `npm run bot:e2e` | Not re-run for 0.4.0 (autonomous play was out of scope); last result 21 of 21 on 0.3.0 |
-| Benchmark report | `npm run bot:bench` | Not re-run; strategy code unchanged apart from the free-check guard. `reports/bench-2026-11-13.md` is from 0.3.0 |
+| Full suite | `npm test` | 959 of 959 pass (72 files, about 10 minutes) |
+| Bot suite | `npm run test:bot` | 181 of 181 (155 earlier, 19 real-recording and dead-small-blind, 7 presentation) |
+| Real-recording tests before the fix | `tests/bot/live-replay.test.ts` on 0.4.0 code | 8 of 10 failed, as expected |
+| Type check, lint, build | `npm run build`, `npx eslint` | clean (lint warnings only) |
+| Built extension in Chromium, recommend-only, stand-in table | `npm run bot:e2e:recommend` | 32 of 32 ([report](reports/e2e-extension-recommend-only-2026-11-13.md)) |
+| Replay of the real bundle | `npm run bot:replay -- debug_bundles/<file>` | 5 hands valid, 0 divergences, Hero turns usable 6 of 6 |
+| Autonomous browser check, benchmark | `npm run bot:e2e`, `npm run bot:bench` | Not re-run (out of scope; strategy unchanged) |
 
-The recommend-only browser check, in numbers: 4 hands, 16 Hero turns, 122 samples taken on Hero's turn of which 119 had a recommendation, 3 fell inside the 120 ms settle window and 0 were blocked; observed and predicted actor never disagreed on a settled table; no recommendation was ever shown outside Hero's turn; 17 hidden folds were deduced; the exported bundle (84 frames) replayed offline with no divergence. This shows the built extension is wired to the new tracker. It says nothing about PokerNow's real markup.
+One earlier synthetic test changed: scenario 21 now expects a highlight on a folded seat to be "lagging" for 1.5 s before it is a disagreement, because that is what the real page does.
 
-The 35 scenarios requested for regression testing are covered in `tests/bot/tracking.test.ts`; test names carry the scenario numbers.
+## Remaining problems
 
-## Limitations
+- One recording only. Not yet seen live: heads-up and short-handed tables, antes, straddles, a dead big blind, all-in run-outs with side pots, showdowns involving Hero, Hero betting or raising.
+- Two frames of the recording show Hero's turn for 80 to 90 ms before Hero is folded (probably a pre-selected fold; that is an inference). No recommendation can be read in that time.
+- At frame 64 PokerNow showed "Your Turn" with no action buttons readable for one frame; the tracker agrees on the actor but the controller waits for the buttons. Harmless there (Hero folded 70 ms later), worth watching.
+- The bundle's log mentions earlier hands on another table marked "reconstruction invalid"; their frames were not in the export, so they could not be examined.
+- A player who folds before the first frame of a hand is left out of the hand (same picture as sitting out). Blinds and order stay right; early-position labels can be off by one for that hand.
+- Strategy limits are unchanged (see LIMITATIONS.md).
 
-- Nothing in 0.4.0 has been run on the live site. The stand-in table uses markup written for this project.
-- PokerNow's real class names for folded, away and acting seats are still unknown. Folds no longer depend on them; the acting-seat highlight and Hero's turn signal still do.
-- How PokerNow displays the pot mid-street, bets of folded players, and blinds after a player leaves is unknown. Pot differences are warnings; a blind in the wrong place is a visible blocker for that hand.
-- Dead blinds, missed-blind posts, straddles, run-it-twice and site prompts are not handled.
-- A blocked or invalid hand gets no recommendation, by design.
-- "Load unpacked" was verified in Playwright's Chromium, not automated in branded Google Chrome.
-- The PokerNow log importer was written from the documented format, not tested on a real export.
-- Strategy limits are unchanged from 0.3.0 (see LIMITATIONS.md): heuristic opponent model, no multi-street planning, no ICM or rake; six-max versus the original engine not completed.
+## Next steps
 
-## Remaining tasks, in priority order
-
-1. **Live recommend-mode session with recording on, then export a debug bundle and PokerNow's log** (TRACKING.md section 8). Replay the bundle, read off the real class names, compare the timeline with the log, fix selectors, keep the bundle as a fixture.
-2. Decide blind handling for players leaving (dead blinds) once the bundle shows what PokerNow does.
-3. Handle site prompts and straddles on the live page.
-4. Recommend-mode soak comparing stored hands with PokerNow's log before any thought of autonomous mode.
-5. Six-max match against the original engine; an independent reference opponent.
-6. Trained heads-up blueprint at true heads-up tables near 100bb, behind a measured comparison.
-7. Solved ranges for early seats at 7 to 10 handed tables and for 20 to 60bb stacks.
-8. Calibrate the behaviour model from imported hand histories.
-9. Two-round look-ahead on flop and turn; ICM and rake; stable player identity.
+1. Another recommend-only session with recording on: more hands, a different table size if possible, and export "Last 20 hands" afterwards. Put the bundle in `debug_bundles/`.
+2. Replay it; add it as a second fixture; fix whatever it shows.
+3. Site prompts, straddles, dead big blind once seen in a recording.
+4. Then the strategy items in LIMITATIONS.md.
 
 ## Version control
 
-- Private repository: `pokernow-autonomous-bot` (remote `private`), default branch `autonomous-bot`.
-- Original public repository stays on remote `origin` and is never pushed to from this work.
-- Practice: one meaningful commit per verified milestone (tests passing), pushed to `private`. No force-pushes.
-- Debug bundles and site logs from live sessions go in `diagnostics/`, which is git-ignored (they contain player names and table ids).
+- Private repository: `pokernow-autonomous-bot` (remote `private`), default branch `autonomous-bot`. `origin` is never pushed to. No force-pushes.
+- `debug_bundles/` and `diagnostics/` are git-ignored (real names and table ids). Fixtures made from them go through `sim/bot/make-fixture.ts`, which replaces names and the table id.
 
 ## Log
 
 - 2026-11-12: baseline verified (778 tests, build). Core engine, equity, profiles, strategy, simulator and adapter written.
-- 2026-11-13: tracker hardened against missed observations; pessimistic response scenario added to bet EV; extension, dashboard and storage built; browser end-to-end check; benchmark report; documentation; first commit and push to the private repository (v0.3.0, `96685c3`).
-- 2026-11-13: v0.4.0. Root-cause analysis of the live turn-tracking reports; tracker rewritten around observed versus predicted actor with evidence-tagged actions; reconciliation, participation model, recommendation lifecycle; recorder, timeline, debug bundle and replay; 36 regression tests; recommend-only browser check.
+- 2026-11-13: v0.3.0 (`96685c3`): extension, dashboard, storage, benchmark, first push.
+- 2026-11-13: v0.4.0 (`af85cb5`): tracker rewrite around observed versus predicted actor, recorder, debug bundle, replay.
+- 2026-11-13: v0.5.0: first real debug bundle analysed; sitting-out seats, highlight lag and dead small blind fixed against it; dashboard and overlay redesigned.

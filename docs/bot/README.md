@@ -42,10 +42,10 @@ To let it act: tick the authorisation box in the popup, open the table, click **
 
 Popup, then **Open dashboard**.
 
-- **Live**: hand, position, cards, board, pot, effective stack, players seated / dealt in / still in, heads-up or multiway, equity, candidate actions with EV and play frequency, the reasoning, opponent range estimates, state confidence, deadline, last execution.
+- **Live**: one status pill (Ready, Waiting, Reconnecting, Needs attention, Paused); your cards, position and stack; the board; the recommended action or a plain statement of why there is none; whose turn it is; pot, price, blinds and opponents; the players list; recent actions. EV per option, the full reasoning and opponent ranges open under the recommendation.
 - **Opponents**: every profile with counts, opportunities, shrunk estimates and intervals, style probabilities, evidence-gated observations, bet sizes, showdowns.
 - **Hand review**: stored hands with the full action and the bot's decision at each of its turns.
-- **Diagnostics**: six separate state checks, observed versus predicted actor, the action timeline of the current hand, player participation, discrepancies, **Export Debug Bundle**, which page elements were found, the event log. See [TRACKING.md](TRACKING.md).
+- **Diagnostics** (collapsible sections): six separate state checks, observed versus predicted actor, the action timeline of the current hand, player participation, discrepancies, **Export Debug Bundle**, which page elements were found, the event log. See [TRACKING.md](TRACKING.md).
 - **Settings**: think time, confidence threshold, assumed clock, selector overrides, PokerNow log import, export, delete.
 
 ## Run simulated games (no browser)

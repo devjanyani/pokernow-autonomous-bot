@@ -46,6 +46,8 @@ export interface HandConfig {
   straddle?: number;
   /** Game variant; anything but 'nlhe' is rejected. */
   variant?: string;
+  /** Dead small blind: nobody posts it and the first dealt seat left of the button is the big blind. */
+  noSmallBlind?: boolean;
 }
 
 export interface SeatState {
@@ -178,17 +180,18 @@ export function createHand(cfg: HandConfig): HandState {
   const dealtSeats = dealt.map((s) => s.seat);
   // Straddle only when 3+ players: the seat left of the big blind.
   let straddleSeat: number | null = null;
-  const base = assignPositions(dealtSeats, cfg.buttonSeat);
+  const noSmallBlind = !!cfg.noSmallBlind && dealt.length > 2;
+  const base = assignPositions(dealtSeats, cfg.buttonSeat, { noSmallBlind });
   if (cfg.straddle && cfg.straddle > cfg.bigBlind && dealt.length >= 3) {
     straddleSeat = base.find((p) => p.preflopOrder === 0)!.seat;
   }
-  const positions = straddleSeat === null ? base : assignPositions(dealtSeats, cfg.buttonSeat, { straddleSeat });
+  const positions = straddleSeat === null ? base : assignPositions(dealtSeats, cfg.buttonSeat, { straddleSeat, noSmallBlind });
   for (const p of positions) seatOf(h, p.seat).pos = p;
 
   if (h.ante > 0) for (const s of dealt) post(h, s, h.ante, 'post-ante');
-  const sb = dealt.find((s) => s.pos!.isSmallBlind)!;
+  const sb = dealt.find((s) => s.pos!.isSmallBlind);
   const bb = dealt.find((s) => s.pos!.isBigBlind)!;
-  post(h, sb, cfg.smallBlind, 'post-sb');
+  if (sb) post(h, sb, cfg.smallBlind, 'post-sb');
   post(h, bb, cfg.bigBlind, 'post-bb');
   h.currentBet = cfg.bigBlind;
   h.lastRaiseSize = cfg.bigBlind;

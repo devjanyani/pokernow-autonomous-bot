@@ -166,7 +166,7 @@ export class LiveController {
   private settling(state: TrackerState): void {
     this.clearDecision();
     this.status = 'Reading the table (waiting for a stable snapshot).';
-    this.rec = { state: 'none', reason: `${this.status} ${state.blockers[0] ?? ''}`.trim(), context: null };
+    this.rec = { state: 'none', reason: `${this.status} ${state.blockers[0] ?? (state.actorLagging ? 'the page still shows the previous turn' : '')}`.trim(), context: null };
   }
 
   /** Not Hero's decision: one explicit status per situation (never a blank panel). */
@@ -216,7 +216,7 @@ export class LiveController {
     else if (state.unsupported) this.suppress(obs, state, 'Unsupported game type.', now);
     else if (!h) this.suppress(obs, state, `No hand is being tracked (${state.waitingReason ?? 'unknown'}).`, now);
     else if (!state.valid) this.suppress(obs, state, `The hand could not be reconstructed (${state.issues.filter((i) => i.startsWith('INVALID')).pop() ?? 'invalid'}).`, now);
-    else if (state.blockers.length && !state.settled) this.settling(state);
+    else if ((state.blockers.length && !state.settled) || (state.actorLagging && !predictedHero)) this.settling(state);
     else if (state.blockers.length) this.suppress(obs, state, state.blockers[0], now);
     else if (!predictedHero) this.suppress(obs, state, `Table shows Hero's turn, engine expects ${h.toAct === null ? 'no further action' : `seat ${h.toAct}`}.`, now);
     else if (!state.heroCards) this.suppress(obs, state, 'Hero\'s cards could not be read.', now);
@@ -416,7 +416,7 @@ export class LiveController {
         handId: h.handId, street: h.street, phase: h.phase, board: h.board.map(cardStr), pot: h.phase === 'complete' ? 0 : potTotal(h),
         heroSeat: st.heroSeat, heroCards: st.heroCards ? st.heroCards.map(cardStr) : null, heroPosition: heroSeatState?.pos?.label ?? null,
         effectiveStackBB: heroSeatState && !heroSeatState.folded && h.phase !== 'complete' ? effectiveStack(h, heroSeatState.seat) / h.bigBlind : null,
-        bigBlind: h.bigBlind, counts: st.heroSeat !== null ? tableCounts(h, st.heroSeat) : null,
+        bigBlind: h.bigBlind, smallBlind: h.smallBlind, heroStack: heroSeatState ? heroSeatState.stack : null, counts: st.heroSeat !== null ? tableCounts(h, st.heroSeat) : null,
         players: h.seats.map((s) => ({ seat: s.seat, name: s.name, playerId: s.playerId, position: s.pos?.label ?? null, stack: s.stack, streetCommit: s.streetCommit, folded: s.folded || !s.dealtIn, allIn: s.allIn, toAct: h.toAct === s.seat })),
       } : null,
       decision, lastExecution: this.lastExecution,

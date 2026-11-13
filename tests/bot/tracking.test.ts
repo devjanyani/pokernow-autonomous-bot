@@ -575,6 +575,10 @@ describe('observed versus predicted actor (scenarios 21, 22, 23, 24)', () => {
     const o = s.obs();
     o.toActSeat = 3; // the seat that folded
     feed(t, o);
+    // For a moment this is what PokerNow really shows (the highlight lags on the seat that just acted): not a finding yet.
+    expect([t.state.observedActor, t.state.predictedActor, t.state.turnStatus, t.state.actorLagging]).toEqual([3, 4, 'unobserved', true]);
+    expect(t.state.blockers).toEqual([]);
+    t.ingest({ ...o, ts: o.ts + 2000 }); // it stays there: now it is a disagreement
     expect([t.state.observedActor, t.state.predictedActor, t.state.turnStatus]).toEqual([3, 4, 'disagree']);
     expect(t.state.blockers.join(' ')).toMatch(/table shows seat 3 to act, engine expects seat 4/);
     expect(t.state.discrepancies.some((d) => d.kind === 'turn' && d.blocking)).toBe(true);

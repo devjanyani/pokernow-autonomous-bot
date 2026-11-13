@@ -40,6 +40,7 @@ const EARLY_LABELS: Record<number, PositionLabel[]> = {
   5: ['UTG', 'UTG+1', 'MP', 'HJ', 'CO'],
   6: ['UTG', 'UTG+1', 'MP', 'LJ', 'HJ', 'CO'],
   7: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'LJ', 'HJ', 'CO'],
+  8: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'MP', 'LJ', 'HJ', 'CO'], // ten dealt in with a dead small blind
 };
 
 function chart6For(isBtn: boolean, isSb: boolean, isBb: boolean, behind: number): Chart6Position | null {
@@ -59,11 +60,14 @@ function chart6For(isBtn: boolean, isSb: boolean, isBb: boolean, behind: number)
  *                    dealt in (dead button), the nearest dealt seat counter-clockwise
  *                    is treated as the button for ordering.
  * @param opts.straddleSeat seat that posted a straddle (acts last preflop).
+ * @param opts.noSmallBlind dead small blind: the seat that would post it is not in the hand, so the first
+ *                    dealt seat left of the button is the big blind and nobody posts a small blind
+ *                    (seen on PokerNow when the small-blind seat sits out). Ignored heads-up.
  */
 export function assignPositions(
   dealtSeats: readonly number[],
   buttonSeat: number,
-  opts: { straddleSeat?: number | null } = {},
+  opts: { straddleSeat?: number | null; noSmallBlind?: boolean } = {},
 ): SeatPosition[] {
   const n = dealtSeats.length;
   if (n < 2 || n > 10) throw new RangeError(`assignPositions: ${n} dealt-in players (need 2-10)`);
@@ -81,12 +85,13 @@ export function assignPositions(
   }
   const at = (k: number) => dealtSeats[(btnIdx + k) % n];
   const headsUp = n === 2;
-  const sbSeat = headsUp ? at(0) : at(1);
-  const bbSeat = headsUp ? at(1) : at(2);
+  const dead = !!opts.noSmallBlind && !headsUp;
+  const sbSeat = dead ? null : headsUp ? at(0) : at(1);
+  const bbSeat = headsUp || dead ? at(1) : at(2);
 
   // Preflop order: first seat left of the big blind ... big blind last.
   const preflop: number[] = [];
-  const bbOffset = headsUp ? 1 : 2;
+  const bbOffset = headsUp || dead ? 1 : 2;
   for (let k = 1; k <= n; k++) preflop.push(at(bbOffset + k));
   const straddle = opts.straddleSeat ?? null;
   if (straddle !== null && preflop.includes(straddle) && !headsUp) {
@@ -99,7 +104,8 @@ export function assignPositions(
   const postflop: number[] = [];
   for (let k = 1; k <= n; k++) postflop.push(at(k));
 
-  const early = EARLY_LABELS[Math.max(0, n - 3)] ?? [];
+  const blindSeats = dead ? 2 : 3; // seats taken by button and blinds
+  const early = EARLY_LABELS[Math.max(0, n - blindSeats)] ?? [];
   const out: SeatPosition[] = [];
   for (let k = 0; k < n; k++) {
     const seat = at(k);
@@ -111,14 +117,15 @@ export function assignPositions(
     else if (isButton) label = 'BTN';
     else if (isSmallBlind) label = 'SB';
     else if (isBigBlind) label = 'BB';
-    else label = early[k - 3];
+    else label = early[k - blindSeats];
     const preflopOrder = preflop.indexOf(seat);
     const behindPreflop = n - 1 - preflopOrder;
     out.push({
       seat, label, preflopOrder,
       postflopOrder: postflop.indexOf(seat),
       behindPreflop,
-      chart6: chart6For(isButton, isSmallBlind, isBigBlind, behindPreflop),
+      // With a dead small blind one fewer player is behind every seat; charts are keyed as if it were there.
+      chart6: chart6For(isButton, isSmallBlind, isBigBlind, behindPreflop + (dead ? 1 : 0)),
       isButton, isSmallBlind, isBigBlind,
     });
   }

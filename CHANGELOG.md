@@ -2,6 +2,15 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.5.0 (2026-11-13)
+Fixes found by replaying the first debug bundle from a real PokerNow table (kept as `tests/bot/fixtures/live-2026-11-13.json`), and a redesigned dashboard and overlay. See `docs/bot/TRACKING.md` section 0.
+- Fixed: a sitting-out player (drawn by PokerNow with the `fold` class, no cards, no chips) was counted as dealt in and could be given a blind. Hero's own big blind was then read as a call and the betting round closed before Hero's option ("engine expects no further action").
+- Fixed: the acting-seat highlight stays on the seat that just acted for up to 0.9 s. 0.4.0 took that as proof the action had passed everyone else, folded them and ended the hand early. A highlight on a seat with nothing to decide is now ignored for 1.5 s, and deductions that would end a hand while someone is shown acting are withdrawn.
+- New: dead small blind (only a big blind posted when the small-blind seat sits out). Blinds are chosen from the chips on the table.
+- Corrected: the 0.4.0 note that PokerNow's fold marker was probably unrecognised. The recording shows it is recognised.
+- New: Live page redesign (cards, board, one recommended action, whose turn, game context, players without horizontal scrolling, recent actions, one status pill). Diagnostics in collapsible sections with nothing removed. Smaller in-page overlay that can be dragged and minimised.
+- Tests: 26 new (real-recording regression, dead small blind, presentation).
+
 ## v0.4.0 (2026-11-13)
 State reconstruction and turn tracking, after reports from recommend-mode play on real tables that the bot sometimes expected another seat while PokerNow showed Hero's turn. Tested on synthetic tables only; see `docs/bot/TRACKING.md`.
 - Fixed: a fold was recognised only from one unverified CSS class. A seat that faced a bet, added no chips and was passed by the action is now recorded as folded (marked as deduced, confirmed by its unchanged stack).

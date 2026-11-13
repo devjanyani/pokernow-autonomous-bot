@@ -21,6 +21,11 @@
 //   observed actor   what the page shows (highlighted seat, Hero's turn signal + buttons)
 //   predicted actor  what the rules engine expects after the reconstructed history
 //
+// The page's highlight is not an instant signal: on PokerNow it stays on the seat
+// that just acted for 0.2-0.9 s (recorded 2026-11-13). A highlight on a seat with
+// nothing left to decide is therefore treated as "not moved yet", never as proof
+// that the action passed other seats.
+//
 // Nothing is invented to make them agree. Deductions are applied only when the
 // rules leave one explanation, they are marked as inferred, and they are rolled
 // back if the result contradicts the observed actor or Hero's visible buttons.
@@ -109,6 +114,8 @@ export interface TrackerState {
   observedActor: number | null;
   predictedActor: number | null;
   turnStatus: 'agree' | 'disagree' | 'unobserved' | 'none';
+  /** The highlight is still on a seat that has nothing to decide (it just acted): the page has not moved it yet. */
+  actorLagging: boolean;
   /** Reasons the state must be reconciled before a decision; empty when usable. */
   blockers: string[];
   warnings: string[];
@@ -180,6 +187,10 @@ export class HandTracker {
   private initialising = false;
   private inferredThisSync = 0;
   private legal: TrackerState['legal'] = { status: 'n/a', detail: null, actions: null };
+  private lag: { key: string; ts: number } | null = null;
+  private actor: { raw: number | null; effective: number | null; lagging: boolean } = { raw: null, effective: null, lagging: false };
+  /** How long a highlight may sit on a seat that has nothing to decide before it counts as a disagreement. */
+  private readonly lagMs = 1500;
 
   /**
    * @param stuckMs    how long "chips moved but no bet is shown" may persist before it becomes a blocker
@@ -193,7 +204,7 @@ export class HandTracker {
     const h = this.h;
     const usable = !!h && this.valid && !this.unsupported;
     const confidence = usable ? (this.blockers.length ? 0.3 : Math.max(0.4, 1 - 0.15 * this.warnings.length)) : 0;
-    const observedActor = this.lastObs && h ? this.observedActor(this.lastObs) : null;
+    const observedActor = h ? this.actor.raw : null;
     const predictedActor = h ? h.toAct : null;
     return {
       hand: h, heroSeat: this.heroSeat, heroCards: this.heroCards, confidence, valid: this.valid && !this.unsupported,
@@ -201,7 +212,8 @@ export class HandTracker {
       eventCount: h?.events.length ?? 0, handsSeen: this.handsSeen,
       phase: h ? h.phase : this.initialising ? 'initialising' : 'waiting',
       observedActor, predictedActor,
-      turnStatus: !h || h.phase === 'complete' ? 'none' : observedActor === null ? (predictedActor === null ? 'none' : 'unobserved') : observedActor === predictedActor ? 'agree' : 'disagree',
+      turnStatus: !h || h.phase === 'complete' ? 'none' : this.actor.effective === null ? (predictedActor === null && !this.actor.lagging ? 'none' : 'unobserved') : observedActor === predictedActor ? 'agree' : 'disagree',
+      actorLagging: this.actor.lagging,
       blockers: this.blockers.slice(), warnings: this.warnings.slice(),
       consistency: !h ? 'none' : !usable ? 'invalid' : this.blockers.length ? 'reconciliation-required' : this.warnings.length ? 'warnings' : 'consistent',
       settled: this.settled, discrepancies: this.discrepancies.slice(), heroStatus: this.heroStatus(),
@@ -225,6 +237,25 @@ export class HandTracker {
     const hero = this.heroSeat ?? obs.seats.find((s) => s.isHero)?.seat ?? null;
     if (obs.heroToAct && hero !== null) return obs.toActSeat !== null && obs.toActSeat !== hero ? null : hero;
     return obs.toActSeat;
+  }
+
+  /**
+   * The observed actor as EVIDENCE. A highlight (or Hero's buttons) on a seat that, by the reconstructed
+   * history, has nothing to decide is a page that has not caught up: null for up to lagMs, then reported.
+   */
+  private effectiveActor(obs: TableObs): number | null {
+    const raw = this.observedActor(obs);
+    const h = this.h;
+    this.actor = { raw, effective: raw, lagging: false };
+    if (raw === null || !h || h.phase === 'complete' || h.toAct === raw || obs.board.length !== h.board.length) { this.lag = null; return raw; }
+    const s = h.seats.find((x) => x.seat === raw);
+    const pending = !!s && s.dealtIn && !s.folded && !s.allIn && h.toAct !== null && (!s.actedThisRound || s.streetCommit < h.currentBet - 1e-9);
+    if (pending) { this.lag = null; return raw; } // genuinely ahead of the engine: seats in between acted unseen
+    const key = `${raw}|${h.events.length}|${h.board.length}`;
+    if (!this.lag || this.lag.key !== key) this.lag = { key, ts: obs.ts };
+    if (obs.ts - this.lag.ts > this.lagMs) return raw;
+    this.actor = { raw, effective: null, lagging: true };
+    return null;
   }
 
   private heroStatus(): HeroStatus {
@@ -257,7 +288,7 @@ export class HandTracker {
     for (const o of obs?.seats ?? []) {
       const p = out.get(o.seat);
       if (p) {
-        p.present = true; p.left = false; p.disconnected = !!o.disconnected; p.sittingOut = o.sittingOut && !p.dealtIn;
+        p.present = true; p.left = false; p.disconnected = !!o.disconnected; p.isHero = p.isHero || o.isHero; p.sittingOut = o.sittingOut && !p.dealtIn;
         p.waitingForNextHand = !p.dealtIn && !o.sittingOut;
       } else {
         // Sat down after the hand started (or no hand is tracked): never part of this hand.
@@ -312,6 +343,7 @@ export class HandTracker {
         }
       }
     }
+    this.effectiveActor(obs);
     if (this.valid) this.validate(obs);
     for (const s of obs.seats) if (s.hasCards) this.sawCards.add(s.seat);
     this.collectReveals(obs);
@@ -350,15 +382,18 @@ export class HandTracker {
   private start(obs: TableObs, heroObs: SeatObs | undefined): void {
     this.h = null; this.valid = true; this.issues = []; this.emitted = false; this.reveals = new Map();
     this.heroSeat = null; this.heroCards = null; this.stuckSince = null; this.uncertain = false;
-    this.meta = []; this.discrepancies = []; this.sawCards = new Set(); this.initialising = false;
+    this.meta = []; this.discrepancies = []; this.sawCards = new Set(); this.initialising = false; this.lag = null;
     this.lastDealer = obs.dealerSeat;
     const fail = (why: string) => { this.waitingReason = why; };
     if (obs.board.length !== 0) return fail('joined mid-hand (or the previous board is still showing): waiting for the next hand');
     if (obs.dealerSeat === null) return fail('dealer button not found');
     if (!(obs.bigBlind && obs.bigBlind > 0)) return fail('blinds not readable');
     // Dealt in = has cards or has chips in front. A "disconnected" or "away" marker does not remove a
-    // player who was dealt cards; a seated player with neither cards nor chips is not in this hand.
-    const present = obs.seats.filter((s) => s.hasCards || s.bet > 0 || (s.folded && !s.sittingOut));
+    // player who was dealt cards. A seat with neither cards nor chips is NOT in this hand, whatever its
+    // classes say: PokerNow draws a sitting-out player with the `fold` class from the first frame
+    // (recorded 2026-11-13), and counting such a seat moved the blinds onto it. A player who really
+    // folded before the first read is also left out; the blinds and the order of the others are unaffected.
+    const present = obs.seats.filter((s) => s.hasCards || s.bet > 0);
     if (present.length < 2) return fail('fewer than two players dealt in');
     if (present.some((s) => s.stack === null)) return fail('a stack could not be read');
     const names = new Map<string, number>();
@@ -366,22 +401,26 @@ export class HandTracker {
     const ambiguous = new Set([...names].filter(([, n]) => n > 1).map(([name]) => name));
     const ante = obs.ante ?? 0;
     const dealtSeats = new Set(present.map((s) => s.seat));
-    let h: HandState;
-    try {
-      h = createHand({
-        handId: `${obs.tableId}:${obs.handLabel ?? 'h'}:${this.handsSeen + 1}:${obs.ts}`,
-        buttonSeat: obs.dealerSeat, smallBlind: obs.smallBlind ?? obs.bigBlind / 2, bigBlind: obs.bigBlind, ante,
-        seats: [...obs.seats].sort((a, b) => a.seat - b.seat).map((s) => ({
-          seat: s.seat, playerId: idOf(s, ambiguous, obs.tableId), name: s.name,
-          stack: (s.stack ?? 0) + s.bet + (dealtSeats.has(s.seat) ? ante : 0), sittingOut: !dealtSeats.has(s.seat),
-        })),
-      });
-    } catch (e) {
-      return fail(`cannot start hand: ${(e as Error).message}`);
-    }
-    // The engine posts the blinds from the button. If the table does not (yet) show those chips in front
-    // of those seats, the snapshot mixes two hands or the button was read before it moved: wait briefly.
-    const missing = this.blindsMissing(h, obs);
+    const build = (noSmallBlind: boolean) => createHand({
+      handId: `${obs.tableId}:${obs.handLabel ?? 'h'}:${this.handsSeen + 1}:${obs.ts}`,
+      buttonSeat: obs.dealerSeat as number, smallBlind: obs.smallBlind ?? (obs.bigBlind as number) / 2, bigBlind: obs.bigBlind as number, ante, noSmallBlind,
+      seats: [...obs.seats].sort((a, b) => a.seat - b.seat).map((s) => ({
+        seat: s.seat, playerId: idOf(s, ambiguous, obs.tableId), name: s.name,
+        stack: (s.stack ?? 0) + s.bet + (dealtSeats.has(s.seat) ? ante : 0), sittingOut: !dealtSeats.has(s.seat),
+      })),
+    });
+    // Which blinds were posted is read from the chips on the table, not assumed from the button alone:
+    // the standard layout, or a dead small blind (the small-blind seat sits out and only a big blind is
+    // posted; recorded 2026-11-13). A layout is accepted only if every blind it posts is visible.
+    let standard: HandState;
+    try { standard = build(false); } catch (e) { return fail(`cannot start hand: ${(e as Error).message}`); }
+    const fits: HandState[] = [];
+    if (!this.blindsMissing(standard, obs)) fits.push(standard);
+    if (present.length > 2) { try { const d = build(true); if (!this.blindsMissing(d, obs)) fits.push(d); } catch { /* not a possible layout */ } }
+    const h = fits.find((c) => obs.toActSeat !== null && c.toAct === obs.toActSeat) ?? fits[0] ?? standard;
+    if (h !== standard) this.note('dead small blind: only a big blind is posted this hand');
+    // If no layout fits, the snapshot mixes two hands or the button was read before it moved: wait briefly.
+    const missing = fits.length ? null : this.blindsMissing(standard, obs);
     if (missing) {
       if (this.initSince === null) this.initSince = obs.ts;
       if (obs.ts - this.initSince < this.initMs) { this.initialising = true; return fail(`hand starting: ${missing}`); }
@@ -408,6 +447,8 @@ export class HandTracker {
       if (!o || o.folded || !o.hasCards) continue; // a blind that already folded may have had its chips swept
       if (o.bet < e.streetCommit - this.tolerance) return `the button on seat ${h.buttonSeat} puts a blind of ${e.streetCommit} on seat ${e.seat} (${e.name}), but the table shows ${o.bet} there`;
     }
+    // The engine cannot have posted more than the table holds.
+    if (obs.pot !== null && potTotal(h) > obs.pot + this.tolerance) return `the blinds implied by the button on seat ${h.buttonSeat} total ${potTotal(h)}, but the table shows a pot of ${obs.pot}`;
     return null;
   }
 
@@ -420,7 +461,6 @@ export class HandTracker {
       if (heroObs && seatOf(h, heroObs.seat).dealtIn) { this.heroSeat = heroObs.seat; this.heroCards = obs.heroCards; }
     }
     const tol = this.tolerance;
-    const actor = this.observedActor(obs);
     const apply = (a: ActionInput, source: EventSource, inferred = false, note: string | null = null, uncertain = false) => {
       applyAction(h, a);
       this.pushMeta(obs.ts, source, inferred, uncertain, note);
@@ -451,6 +491,8 @@ export class HandTracker {
         }
 
         // 2. The seat is drawn as folded, or its cards were taken away while the hand is still being played.
+        // Evaluated against the engine as it stands NOW: a highlight still on the seat whose action was just applied is not evidence.
+        const actor = this.effectiveActor(obs);
         const cardsGone = !!o && seat !== this.heroSeat && this.sawCards.has(seat) && !o.hasCards && !o.shownCards && (actor !== null || advanced);
         if (o && (o.folded || cardsGone)) {
           // A folded seat whose stack is lower than expected put chips in that were never seen.
@@ -541,8 +583,10 @@ export class HandTracker {
   /** After deductions: does the result contradict what the page shows? Returns the reason, or null. */
   private contradiction(obs: TableObs): string | null {
     const h = this.h!;
-    if (h.phase === 'complete') return null;
-    const actor = this.observedActor(obs);
+    const shown = this.observedActor(obs);
+    // A hand cannot be over, by deduction alone, while the page still shows somebody acting.
+    if (h.phase === 'complete') return shown !== null ? `deducing the unseen actions would end the hand, but the table shows seat ${shown} acting: deductions withdrawn` : null;
+    const actor = this.effectiveActor(obs);
     if (actor !== null && obs.board.length === h.board.length && h.toAct !== actor) {
       return `deducing the unseen actions would leave ${h.toAct === null ? 'nobody' : `seat ${h.toAct}`} to act, but the table shows seat ${actor}: deductions withdrawn`;
     }
@@ -562,7 +606,7 @@ export class HandTracker {
     const tol = Math.max(this.tolerance, 0.011);
     const found: { kind: DiscrepancyKind; msg: string; block: boolean }[] = [];
     const sameStreet = obs.board.length === h.board.length;
-    const actor = this.observedActor(obs);
+    const actor = this.actor.effective;
     const betting = h.toAct !== null && sameStreet;
 
     if (betting) {
@@ -576,7 +620,7 @@ export class HandTracker {
         if (!e.folded && !o.folded && o.bet < e.streetCommit - tol) {
           found.push({ kind: 'bet', msg: `engine has seat ${o.seat} (${e.name}) with ${e.streetCommit} in front this street, table shows ${o.bet}: a blind or an action was attributed to the wrong seat`, block: true });
         }
-        if (!e.folded && o.seat !== h.toAct && o.bet > e.streetCommit + tol) {
+        if (!e.folded && o.seat !== h.toAct && o.bet > e.streetCommit + tol && !this.actor.lagging) {
           found.push({ kind: 'bet', msg: `seat ${o.seat} (${e.name}) shows ${o.bet} in front, engine has ${e.streetCommit} and expects seat ${h.toAct} to act first`, block: false });
         }
       }

@@ -11,23 +11,27 @@ The built `dist/` was loaded as an unpacked extension and pointed at a local sta
 | recommend mode: hand tracked with full confidence | pass | confidence 1 |
 | recommend mode: a decision is shown | pass | bet small (56) |
 | recommend mode: nothing clicked | pass | 0 hero actions |
-| dashboard renders the decision | pass |  |
-| recommend-only soak: hands were played (the table moved Hero by itself) | pass | 4 hands, 16 table-driven hero actions in 45s |
+| dashboard renders the decision | pass | BET 56 |
+| dashboard live page: status pill, five board slots, players list, timeline | pass | pill "Ready", 7 player rows |
+| dashboard live page: no horizontal scrolling at 1280 px | pass |  |
+| dashboard live page: the decision area is never empty | pass |  |
+| recommend-only soak: hands were played (the table moved Hero by itself) | pass | 4 hands, 17 table-driven hero actions in 50s |
 | recommend-only soak: the extension clicked nothing | pass | 0 clicks |
-| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 122 samples on Hero's turn: 119 with a recommendation, 3 while the table settled, 0 blocked |
+| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 127 samples on Hero's turn: 123 with a recommendation, 4 while the table settled, 0 blocked |
 | recommend-only soak: observed and predicted actor never disagreed on a settled table | pass | 0 samples |
 | recommend-only soak: no recommendation shown outside Hero's turn | pass | 0 samples |
-| recommend-only soak: explicit status for every situation | pass | recommendation ; Waiting for opponent. ; thinking ; Hand complete — waiting for next hand. ; Reading the table . ; Betting round complete — waiting for the next card. ; Engine expects Hero to act; waiting for the table to show Hero's turn. |
+| recommend-only soak: explicit status for every situation | pass | recommendation ; Waiting for opponent. ; Hand complete — waiting for next hand. ; Reading the table . ; Betting round complete — waiting for the next card. ; Engine expects Hero to act; waiting for the table to show Hero's turn. |
+| dashboard: diagnostics are in collapsible sections | pass | 9 sections |
 | dashboard: diagnostics tab shows the six state checks and the turn card | pass |  |
 | dashboard: action timeline is drawn | pass |  |
-| debug bundle exported from the dashboard | pass | 4 hands, 84 frames, extension 0.4.0, 431 KB |
-| debug bundle replays offline with no divergence | pass | 4 hands replayed, 0 with a divergence |
-| hidden folds were deduced and marked as such | pass | 17 deduced actions in 4 hands |
-| replay: Hero turns usable | pass | 32 usable, 0 blocked of 38 frames |
+| debug bundle exported from the dashboard | pass | 5 hands, 98 frames, extension 0.5.0, 499 KB |
+| debug bundle replays offline with no divergence | pass | 5 hands replayed, 0 with a divergence |
+| hidden folds were deduced and marked as such | pass | 20 deduced actions in 5 hands |
+| replay: Hero turns usable | pass | 36 usable, 0 blocked of 43 frames |
 | hands stored in the extension database | pass | 4 stored, 4 valid |
 | most stored hands reconstructed cleanly | pass | 4/4 |
 | opponent profiles stored | pass | 6 profiles, up to 4 hands; ids like name:pgle2etest:Hero, name:pgle2etest:Villain 1 |
-| decisions stored as shown-only | pass | {"shown-only":16} |
+| decisions stored as shown-only | pass | {"shown-only":18} |
 | no engine or storage errors logged | pass |  |
 | dashboard: opponents tab lists profiles | pass |  |
 | dashboard: hand review shows the action | pass |  |
