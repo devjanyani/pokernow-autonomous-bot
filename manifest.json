@@ -1,38 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "GTO Poker Overlay",
-  "version": "0.2.4",
-  "description": "GTO study overlay for PokerNow: solved preflop ranges, postflop policy, equity, and opponent stats.",
-  "permissions": ["storage", "activeTab", "tabs"],
+  "name": "Poker Bot for PokerNow (local engine)",
+  "version": "0.3.0",
+  "description": "Fully local No-Limit Hold'em engine for authorised PokerNow bot competitions: state tracking, multiway equity, opponent profiles, recommendations and guarded autonomous play.",
+  "minimum_chrome_version": "110",
+  "permissions": [
+    "storage"
+  ],
   "content_scripts": [
     {
       "matches": [
-        "https://www.pokernow.club/*",
-        "https://pokernow.club/*",
-        "https://www.pokernow.com/*",
-        "https://pokernow.com/*"
+        "https://www.pokernow.club/games/*",
+        "https://pokernow.club/games/*",
+        "https://www.pokernow.com/games/*",
+        "https://pokernow.com/games/*"
       ],
-      "js": ["content-script.js"],
-      "css": ["overlay.css"],
+      "js": [
+        "content-script.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "GTO Poker Overlay"
+    "default_title": "Poker bot"
   },
   "background": {
     "service_worker": "background.js"
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["cfr-worker.js", "blueprint/*"],
-      "matches": [
-        "https://www.pokernow.club/*",
-        "https://pokernow.club/*",
-        "https://www.pokernow.com/*",
-        "https://pokernow.com/*"
-      ]
-    }
-  ]
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+  }
 }

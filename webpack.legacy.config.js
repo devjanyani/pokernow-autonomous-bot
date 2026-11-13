@@ -1,0 +1,67 @@
+const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
+const { DefinePlugin } = require('webpack');
+const pkg = require('./package.json');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+
+module.exports = {
+  entry: {
+    'content-script': './src/content-script/index.ts',
+    'background': './src/background.ts',
+    'popup': './src/ui/popup.ts',
+    'cfr-worker': './src/workers/cfr-worker.ts',
+    'trainer': './src/trainer/index.ts',
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist-legacy'),
+    filename: '[name].js',
+    clean: true,
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+      {
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader'],
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+  },
+  plugins: [
+    new DefinePlugin({ __APP_VERSION__: JSON.stringify(`v${pkg.version}`) }),
+    new CopyPlugin({
+      patterns: [
+        // The extension version comes from package.json (single source of truth).
+        {
+          from: 'manifest.legacy.json',
+          to: 'manifest.json',
+          transform: (content) => JSON.stringify({ ...JSON.parse(content.toString()), version: pkg.version }, null, 2),
+        },
+        { from: 'src/ui/overlay.css', to: 'overlay.css' },
+        // In-browser blueprint (BLUEPRINT engine flag): gzipped policy and bucket
+        // tables, fetched by src/core/blueprint/web-assets.ts.
+        { from: 'blueprint/web', to: 'blueprint' },
+      ],
+    }),
+    new HtmlWebpackPlugin({
+      template: './src/ui/popup.html',
+      filename: 'popup.html',
+      chunks: ['popup'],
+    }),
+    new HtmlWebpackPlugin({
+      template: './src/trainer/trainer.html',
+      filename: 'trainer.html',
+      chunks: ['trainer'],
+    }),
+  ],
+  optimization: {
+    minimize: false, // easier debugging
+  },
+  devtool: 'cheap-module-source-map',
+};

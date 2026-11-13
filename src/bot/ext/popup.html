@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Poker bot</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 13px/1.4 system-ui, sans-serif; background: #16181d; color: #e8eaed; margin: 0; width: 320px; padding: 12px; }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  fieldset { border: 1px solid #3a3f4a; border-radius: 8px; margin: 0 0 10px; padding: 8px 10px; }
+  legend { color: #9aa0aa; padding: 0 4px; }
+  label { display: block; margin: 4px 0; }
+  .muted { color: #9aa0aa; font-size: 12px; }
+  button { font: inherit; border-radius: 6px; border: 1px solid #3a3f4a; background: #262a33; color: #e8eaed; padding: 6px 10px; cursor: pointer; }
+  button:hover { background: #303541; }
+  #stop { background: #c62828; border-color: #c62828; font-weight: 700; width: 100%; padding: 9px; }
+  #stop.clear { background: #2e7d32; border-color: #2e7d32; }
+  #state { font-weight: 600; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; }
+  .row button { flex: 1; }
+  code { background: #262a33; padding: 1px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <h1>Poker bot</h1>
+  <div id="state" role="status"></div>
+  <button id="stop" type="button">EMERGENCY STOP</button>
+  <fieldset style="margin-top:10px">
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="manual"> Manual: observe and profile only</label>
+    <label><input type="radio" name="mode" value="recommend"> Recommend: show decisions, never click</label>
+    <label><input type="radio" name="mode" value="autonomous"> Autonomous: act for the seat</label>
+  </fieldset>
+  <fieldset>
+    <legend>Authorization for autonomous play</legend>
+    <label><input type="checkbox" id="auth"> I confirm automated play is authorised by the organiser of the table(s) below (bot competition).</label>
+    <div class="muted">This table: <code id="table">not on a PokerNow table</code></div>
+    <div class="row" style="margin-top:6px"><button id="allow" type="button">Authorise this table</button><button id="revoke" type="button">Revoke</button></div>
+    <div class="muted" id="tables" style="margin-top:6px"></div>
+  </fieldset>
+  <div class="row"><button id="dash" type="button">Open dashboard</button></div>
+</body>
+</html>

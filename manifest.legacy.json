@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "GTO Poker Overlay",
+  "version": "0.2.4",
+  "description": "GTO study overlay for PokerNow: solved preflop ranges, postflop policy, equity, and opponent stats.",
+  "permissions": ["storage", "activeTab", "tabs"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.pokernow.club/*",
+        "https://pokernow.club/*",
+        "https://www.pokernow.com/*",
+        "https://pokernow.com/*"
+      ],
+      "js": ["content-script.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GTO Poker Overlay"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["cfr-worker.js", "blueprint/*"],
+      "matches": [
+        "https://www.pokernow.club/*",
+        "https://pokernow.club/*",
+        "https://www.pokernow.com/*",
+        "https://pokernow.com/*"
+      ]
+    }
+  ]
+}

@@ -2,6 +2,13 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.3.0 (2026-11-13)
+- New extension build (`src/bot/`, `npm run build`): a fully local No-Limit Hold'em bot for PokerNow tables of 2 to 10 players. Manual, recommend and authorised autonomous modes, emergency stop, dashboard with hand review. See `docs/bot/`.
+- Shared rules engine with side pots, short all-in re-open rule, antes and straddle; multiway Monte Carlo EV engine; opponent profiles with opportunity counts and shrinkage; adaptive decision time.
+- Offline simulator for 2 to 10 players with benchmark opponents, tournaments, duplicate rotation and a reproducible report (`npm run bot:bench`).
+- End-to-end browser check against a local stand-in table (`npm run bot:e2e`). Not yet run on a live PokerNow table.
+- The previous overlay now builds with `npm run build:legacy` into `dist-legacy/` (`manifest.legacy.json`, `webpack.legacy.config.js`). It is no longer what `dist/` contains.
+
 ## v0.2.4 (2026-10-12)
 - Overlay: when the blueprint makes the decision, the top section shows the blueprint's own mix ("BLUEPRINT MIX") instead of the preflop chart advice, which could disagree with the action the bot took.
 - The blueprint now plays only at 80 to 125 big blinds effective (was 50 to 200). It was trained at 100 BB, and at 50 BB an all-in was read as the much larger 100 BB abstract shove. Other depths use the regular engine.

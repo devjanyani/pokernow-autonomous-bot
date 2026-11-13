@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker bot dashboard</title>
+<style>
+  :root { color-scheme: dark; --bg:#111318; --panel:#191c23; --line:#2c313b; --text:#e8eaed; --muted:#9aa0aa; --accent:#8ab4ff; --good:#3ecf6e; --warn:#f0b429; --bad:#ef5350; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button, .btn { font: inherit; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  nav button[aria-selected=true] { background: var(--panel); border-color: var(--line); color: var(--accent); }
+  .btn { border-color: var(--line); background: var(--panel); }
+  .btn:hover, nav button:hover { border-color: var(--accent); }
+  #estop { margin-left: auto; background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700; }
+  #estop.clear { background: #2e7d32; border-color: #2e7d32; }
+  main { padding: 16px; max-width: 1300px; margin: 0 auto; }
+  section[hidden] { display: none; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 52px; background: var(--panel); }
+  td.num, th.num { text-align: right; }
+  .scroll { overflow-x: auto; }
+  .big { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .muted { color: var(--muted); } .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 12px; margin: 0 4px 4px 0; }
+  tr.sel { background: #222733; } tr.click { cursor: pointer; }
+  ul { margin: 4px 0; padding-left: 18px; } li { margin: 2px 0; }
+  label { display: block; margin: 8px 0 2px; color: var(--muted); }
+  input[type=number], input[type=text], select, textarea { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 100%; }
+  textarea { min-height: 90px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; } .bar > i { display: block; height: 100%; background: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Poker bot</h1>
+  <nav role="tablist">
+    <button role="tab" data-tab="live" aria-selected="true">Live</button>
+    <button role="tab" data-tab="opponents" aria-selected="false">Opponents</button>
+    <button role="tab" data-tab="hands" aria-selected="false">Hand review</button>
+    <button role="tab" data-tab="diag" aria-selected="false">Diagnostics</button>
+    <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+  </nav>
+  <button id="estop" type="button">EMERGENCY STOP</button>
+</header>
+<main>
+  <section id="tab-live"></section>
+  <section id="tab-opponents" hidden></section>
+  <section id="tab-hands" hidden></section>
+  <section id="tab-diag" hidden></section>
+  <section id="tab-settings" hidden></section>
+</main>
+</body>
+</html>

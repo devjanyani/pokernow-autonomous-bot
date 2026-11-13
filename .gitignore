@@ -45,3 +45,9 @@ sim/REPORT.md
 
 # local play app hand histories (sim/play)
 sim/play/history/
+
+# builds
+dist-legacy/
+
+# local repository dump (not source)
+repomix-output-*.txt

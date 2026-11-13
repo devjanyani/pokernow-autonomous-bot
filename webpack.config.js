@@ -1,67 +1,32 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
-const { DefinePlugin } = require('webpack');
-const pkg = require('./package.json');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const pkg = require('./package.json');
 
+// Build of the local poker bot extension (src/bot/ext). The earlier overlay
+// extension still builds with webpack.legacy.config.js into dist-legacy/.
 module.exports = {
   entry: {
-    'content-script': './src/content-script/index.ts',
-    'background': './src/background.ts',
-    'popup': './src/ui/popup.ts',
-    'cfr-worker': './src/workers/cfr-worker.ts',
-    'trainer': './src/trainer/index.ts',
+    'content-script': './src/bot/ext/content.ts',
+    background: './src/bot/ext/background.ts',
+    popup: './src/bot/ext/popup.ts',
+    dashboard: './src/bot/ext/dashboard.ts',
   },
-  output: {
-    path: path.resolve(__dirname, 'dist'),
-    filename: '[name].js',
-    clean: true,
-  },
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        use: 'ts-loader',
-        exclude: /node_modules/,
-      },
-      {
-        test: /\.css$/,
-        use: ['style-loader', 'css-loader'],
-      },
-    ],
-  },
-  resolve: {
-    extensions: ['.ts', '.js'],
-  },
+  output: { path: path.resolve(__dirname, 'dist'), filename: '[name].js', clean: true },
+  module: { rules: [{ test: /.ts$/, use: { loader: 'ts-loader', options: { transpileOnly: true } }, exclude: /node_modules/ }] },
+  resolve: { extensions: ['.ts', '.js'] },
   plugins: [
-    new DefinePlugin({ __APP_VERSION__: JSON.stringify(`v${pkg.version}`) }),
     new CopyPlugin({
-      patterns: [
-        // The extension version comes from package.json (single source of truth).
-        {
-          from: 'manifest.json',
-          to: 'manifest.json',
-          transform: (content) => JSON.stringify({ ...JSON.parse(content.toString()), version: pkg.version }, null, 2),
-        },
-        { from: 'src/ui/overlay.css', to: 'overlay.css' },
-        // In-browser blueprint (BLUEPRINT engine flag): gzipped policy and bucket
-        // tables, fetched by src/core/blueprint/web-assets.ts.
-        { from: 'blueprint/web', to: 'blueprint' },
-      ],
+      patterns: [{
+        from: 'manifest.json', to: 'manifest.json',
+        transform: (content) => JSON.stringify({ ...JSON.parse(content.toString()), version: pkg.version }, null, 2),
+      }],
     }),
-    new HtmlWebpackPlugin({
-      template: './src/ui/popup.html',
-      filename: 'popup.html',
-      chunks: ['popup'],
-    }),
-    new HtmlWebpackPlugin({
-      template: './src/trainer/trainer.html',
-      filename: 'trainer.html',
-      chunks: ['trainer'],
-    }),
+    new HtmlWebpackPlugin({ template: './src/bot/ext/popup.html', filename: 'popup.html', chunks: ['popup'] }),
+    new HtmlWebpackPlugin({ template: './src/bot/ext/dashboard.html', filename: 'dashboard.html', chunks: ['dashboard'] }),
   ],
-  optimization: {
-    minimize: false, // easier debugging
-  },
+  optimization: { minimize: false },
+  // No eval-based source maps: Manifest V3 forbids eval in extension code.
   devtool: 'cheap-module-source-map',
+  performance: { hints: false },
 };

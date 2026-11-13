@@ -1,0 +1,378 @@
+{
+  "seed": 2026,
+  "quick": false,
+  "samplesPerDecision": 400,
+  "node": "v24.20.0",
+  "date": "2026-11-13T05:41:12.283Z",
+  "tableSizes": [
+    {
+      "players": 2,
+      "hands": 6000,
+      "bb100": 62.860833333333154,
+      "ci95": 29.94710994257629,
+      "deals": 3000,
+      "sd": 8.368728391651159,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive"
+      ]
+    },
+    {
+      "players": 3,
+      "hands": 6000,
+      "bb100": 166.44249999999948,
+      "ci95": 41.50628704182355,
+      "deals": 2000,
+      "sd": 9.470497889707767,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive"
+      ]
+    },
+    {
+      "players": 4,
+      "hands": 6000,
+      "bb100": 103.68916666666664,
+      "ci95": 37.81370039589744,
+      "deals": 1500,
+      "sd": 7.47203223937692,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity"
+      ]
+    },
+    {
+      "players": 5,
+      "hands": 5400,
+      "bb100": 147.4898148148149,
+      "ci95": 43.305546982928284,
+      "deals": 1080,
+      "sd": 7.261048453362125,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive"
+      ]
+    },
+    {
+      "players": 6,
+      "hands": 5400,
+      "bb100": 121.50462962962958,
+      "ci95": 44.27518861325516,
+      "deals": 900,
+      "sd": 6.776814583661505,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive",
+        "tight-passive"
+      ]
+    },
+    {
+      "players": 7,
+      "hands": 5397,
+      "bb100": 544.6414674819348,
+      "ci95": 103.17207374097859,
+      "deals": 771,
+      "sd": 14.616159631242414,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive",
+        "tight-passive",
+        "calling-station"
+      ]
+    },
+    {
+      "players": 8,
+      "hands": 5400,
+      "bb100": 507.20092592592573,
+      "ci95": 87.53090286233038,
+      "deals": 675,
+      "sd": 11.602650841066247,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive",
+        "tight-passive",
+        "calling-station",
+        "tight-aggressive"
+      ]
+    },
+    {
+      "players": 9,
+      "hands": 5400,
+      "bb100": 421.90277777777777,
+      "ci95": 89.0993179150118,
+      "deals": 600,
+      "sd": 11.135095169479534,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive",
+        "tight-passive",
+        "calling-station",
+        "tight-aggressive",
+        "range-equity"
+      ]
+    },
+    {
+      "players": 10,
+      "hands": 5400,
+      "bb100": 419.44444444444395,
+      "ci95": 88.56240985779704,
+      "deals": 540,
+      "sd": 10.500022606507454,
+      "illegal": 0,
+      "field": [
+        "tight-aggressive",
+        "loose-passive",
+        "range-equity",
+        "loose-aggressive",
+        "tight-passive",
+        "calling-station",
+        "tight-aggressive",
+        "range-equity",
+        "loose-passive"
+      ]
+    }
+  ],
+  "headsUp": [
+    {
+      "opponent": "random",
+      "hands": 6000,
+      "bb100": 349.54916666666685,
+      "ci95": 65.63109243754491,
+      "deals": 3000,
+      "sd": 18.34062744987248
+    },
+    {
+      "opponent": "calling-station",
+      "hands": 6000,
+      "bb100": 941.2650000000001,
+      "ci95": 85.69474744366713,
+      "deals": 3000,
+      "sd": 23.94742154826768
+    },
+    {
+      "opponent": "tight-passive",
+      "hands": 6000,
+      "bb100": 53.39083333333333,
+      "ci95": 23.14418537944592,
+      "deals": 3000,
+      "sd": 6.467649187450914
+    },
+    {
+      "opponent": "loose-passive",
+      "hands": 6000,
+      "bb100": 162.99916666666675,
+      "ci95": 35.29169342862609,
+      "deals": 3000,
+      "sd": 9.862273767048647
+    },
+    {
+      "opponent": "tight-aggressive",
+      "hands": 6000,
+      "bb100": 77.47999999999989,
+      "ci95": 29.94800681731045,
+      "deals": 3000,
+      "sd": 8.368979023550729
+    },
+    {
+      "opponent": "loose-aggressive",
+      "hands": 6000,
+      "bb100": 122.35083333333388,
+      "ci95": 34.265602315573545,
+      "deals": 3000,
+      "sd": 9.57553231364331
+    },
+    {
+      "opponent": "range-equity",
+      "hands": 6000,
+      "bb100": 60.598333333333244,
+      "ci95": 20.82954076678187,
+      "deals": 3000,
+      "sd": 5.820821092061165
+    },
+    {
+      "opponent": "legacy-engine",
+      "hands": 10000,
+      "bb100": -10.579999999999982,
+      "ci95": 27.620031310363565,
+      "deals": 5000,
+      "sd": 9.964444610276958
+    }
+  ],
+  "exploitPaired": {
+    "with": {
+      "bb100": 678.1988888888884,
+      "ci95": 76.02962248271076,
+      "deals": 1500,
+      "sd": 15.023543963978355
+    },
+    "without": {
+      "bb100": 564.793333333332,
+      "ci95": 75.08916676917305,
+      "deals": 1500,
+      "sd": 14.83770879477544
+    },
+    "diff": {
+      "bb100": 113.40555555555557,
+      "ci95": 38.34733311468655,
+      "deals": 1500,
+      "sd": 7.5774787002372035
+    },
+    "hands": 9000
+  },
+  "tournaments": {
+    "runs": 30,
+    "wins": 10,
+    "places": [
+      1,
+      6,
+      1,
+      1,
+      3,
+      5,
+      2,
+      1,
+      4,
+      1,
+      4,
+      1,
+      1,
+      3,
+      1,
+      6,
+      5,
+      3,
+      4,
+      2,
+      5,
+      2,
+      6,
+      2,
+      1,
+      5,
+      2,
+      1,
+      4,
+      3
+    ]
+  },
+  "equity": [
+    {
+      "samples": 400,
+      "meanAbs": 0.01103320138888904,
+      "max": 0.04350291666666667,
+      "within2se": 0.95
+    },
+    {
+      "samples": 2000,
+      "meanAbs": 0.005778645833332932,
+      "max": 0.024016250000000378,
+      "within2se": 0.9166666666666666
+    },
+    {
+      "samples": 10000,
+      "meanAbs": 0.0022591069444446842,
+      "max": 0.014749999999999985,
+      "within2se": 0.9333333333333333
+    }
+  ],
+  "profiling": {
+    "hands": 3000,
+    "mismatches": 0
+  },
+  "latency": [
+    {
+      "players": 2,
+      "samples": 400,
+      "decisions": 731,
+      "p50": 1.3096999999834225,
+      "p95": 2.441899999976158,
+      "max": 3.447000000043772
+    },
+    {
+      "players": 2,
+      "samples": 2000,
+      "decisions": 733,
+      "p50": 1.6023000000277534,
+      "p95": 6.071800000034273,
+      "max": 10.726699999999255
+    },
+    {
+      "players": 2,
+      "samples": 8000,
+      "decisions": 736,
+      "p50": 1.6012000000337139,
+      "p95": 16.652499999967404,
+      "max": 24.4377000000095
+    },
+    {
+      "players": 6,
+      "samples": 400,
+      "decisions": 570,
+      "p50": 1.2839999999850988,
+      "p95": 2.4936000000452623,
+      "max": 4.8140000000130385
+    },
+    {
+      "players": 6,
+      "samples": 2000,
+      "decisions": 574,
+      "p50": 1.5446000000229105,
+      "p95": 6.4786999999778345,
+      "max": 15.195899999933317
+    },
+    {
+      "players": 6,
+      "samples": 8000,
+      "decisions": 573,
+      "p50": 1.5927000000374392,
+      "p95": 21.40439999999944,
+      "max": 37.1294999999227
+    },
+    {
+      "players": 10,
+      "samples": 400,
+      "decisions": 641,
+      "p50": 1.8412000000244007,
+      "p95": 3.65480000001844,
+      "max": 8.868499999982305
+    },
+    {
+      "players": 10,
+      "samples": 2000,
+      "decisions": 638,
+      "p50": 2.149699999950826,
+      "p95": 9.623999999952503,
+      "max": 17.679799999925308
+    },
+    {
+      "players": 10,
+      "samples": 8000,
+      "decisions": 638,
+      "p50": 2.145600000047125,
+      "p95": 34.54539999994449,
+      "max": 60.925400000065565
+    }
+  ],
+  "speed": {
+    "evalPerSec": 6267348.804909236,
+    "equityDealsPerSec": 718233.9489077079
+  }
+}
