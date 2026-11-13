@@ -62,7 +62,7 @@ Emergency stop: confirmed in code and by test to be independent of tracking and 
 
 | Check | Command | Result |
 |---|---|---|
-| Full suite | `npm test` | 983 of 983 pass (73 files, about 10 minutes) |
+| Full suite | `npm test` | 983 of 983 pass (74 files, about 10 minutes) |
 | Bot suite | `npm run test:bot` | 205 of 205 (181 earlier, 24 for action buttons) |
 | Button tests before the fix | `tests/bot/controls-dom.test.ts` on 0.5.0 code | 3 of 5 failed, as expected (Bet 5 read as a call of 5; "call" clicks the Bet shortcut) |
 | Real-recording tests before the fix | `tests/bot/live-replay.test.ts` on 0.4.0 code | 8 of 10 failed, as expected |
