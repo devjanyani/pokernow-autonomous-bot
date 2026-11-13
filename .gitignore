@@ -48,6 +48,8 @@ sim/play/history/
 
 # builds
 dist-legacy/
+# Debug bundles and site logs from live sessions (player names, table ids): keep local
+diagnostics/
 
 # local repository dump (not source)
 repomix-output-*.txt

@@ -31,7 +31,8 @@ Tested means an automated test or a scripted run in this repository exercises it
 |---|---|
 | **PokerNow selectors** (`src/bot/adapter/pokernow/dom.ts`) | Never run against the live site. They come from the repository's earlier scraper and public descriptions. The DOM tests and the browser check use markup written for this project. Expect to adjust selectors on first contact; the Diagnostics tab shows which elements were not found and Settings accepts overrides without a rebuild. |
 | Reading the action clock | The timer selector is a guess. When it does not match, the assumed clock from Settings (default 20 s) is used. |
-| Detecting sitting-out, folded and to-act seats on the live page | Class names are assumptions. |
+| Detecting sitting-out, folded and to-act seats on the live page | Class names are assumptions. Since v0.4.0 a fold no longer depends on its class: it is deduced from the action passing a seat that faced a bet with an unchanged stack. The acting-seat highlight and Hero's turn signal are still assumptions. |
+| **Turn tracking and reconciliation (v0.4.0)** | 36 regression tests on synthetic tables and a recommend-only browser check on the stand-in table with fold markers hidden. Not confirmed on the live site; see [TRACKING.md](TRACKING.md) sections 1 and 8. |
 | Typing a bet into PokerNow's input and submitting it | Works on the fixture form. The live control may need a different event sequence. |
 | Loading in Google Chrome specifically | Verified in Playwright's Chromium build. Branded Chrome no longer accepts `--load-extension`, so "Load unpacked" in Chrome itself was not automated. |
 | PokerNow log import | Parser written from the documented line formats and tested on a hand-written log, not on a real export. In particular whether "calls N" is the amount added or the street total is handled both ways and reported when neither matches. |
@@ -92,8 +93,10 @@ Detailed in [STRATEGY.md](STRATEGY.md). The main ones:
 | PokerNow changes its markup | Elements show as missing in Diagnostics; no hand starts; nothing is clicked. |
 | A card cannot be read | It is reported as a read problem, never guessed; Hero's cards stay unknown and no decision is made. |
 | Joined mid-hand after the flop | Waits for the next hand. |
-| An action was missed and cannot be inferred | Hand marked invalid; observing only until the next hand. |
-| Table and engine disagree (pot, stacks, call amount, whose turn) | Confidence drops; below the threshold the bot pauses. At the deadline it checks or folds if that option is on. |
+| An action was missed and cannot be inferred | Hand marked invalid; observing only until the next hand. On Hero's turn the panel says "Decision unavailable — state reconciliation required" with the reason. |
+| A fold is not displayed in a way the adapter recognises | Deduced when the action has passed the seat, it faced a bet and its stack is unchanged; marked as deduced in the timeline. |
+| Table and engine disagree (stacks, chips in front, call amount, whose turn) | Blocker: no recommendation, the reason is shown and logged, and the frames are recorded for the debug bundle. A pot-only difference is a warning. In autonomous mode the deadline fallback (check or fold) still applies if that option is on. |
+| The page is mid-update | Nothing is deduced or reported until the same snapshot has been seen for 120 ms. |
 | Two opponent actions inside one 250 ms read interval that reverse each other (raise then re-raise by the same pair) | Detected as "intermediate raises were missed": hand invalid. |
 | A player folds although a check was free | Treated as a probable missed bet: the hand is kept out of profiles. |
 | The hand or street changes while computing | The computation is cancelled; the executor rejects stale requests. |
@@ -110,7 +113,7 @@ One known gap in this list: the timeout fallback clicks through the driver direc
 
 ## 7. Remaining improvements, in priority order
 
-1. **Validate the DOM adapter on a real authorised table**: run in manual mode, read Diagnostics, fix selectors, confirm seat states, the dealer button, the bet input and the clock. Save a few real page snapshots as fixtures. Nothing else matters until this is done.
+1. **Validate tracking on a real table in recommend mode and export a debug bundle** ([TRACKING.md](TRACKING.md) section 8). Replay it, correct selectors from the recorded class lists, compare the timeline with PokerNow's log, and keep the bundle as a regression fixture. Nothing else matters until this is done.
 2. **Recommend-mode soak** on that table: compare stored hands with PokerNow's own log, using the log importer as the reference, before enabling autonomous mode.
 3. Handle site prompts (rebuy, sit back in, show or muck) and straddles on the live page.
 4. Run the six-max match against the original engine, and add an external reference opponent, to get a strength measurement that does not share the bot's own model.

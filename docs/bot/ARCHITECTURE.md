@@ -53,20 +53,7 @@ Every action is an `ActionEvent` with a unique id (`handId:seq`), the amount add
 
 ## State reconstruction
 
-The tracker never trusts a single read. It holds an engine hand and explains each observation as legal actions:
-
-| Seen | Inferred |
-|---|---|
-| a seat's bet grew above the current bet | bet / raise to that amount |
-| a seat's bet grew up to the current bet | call (or short all-in call) |
-| a seat shows folded | fold |
-| nothing changed, action moved to another seat, check is legal | check |
-| more board cards than the engine has | close the round (stack-checked), deal the street |
-| opponents' cards face up on the river | remaining players closed the action |
-
-Because events come from the difference between engine and table, reading the same table twice yields nothing (no duplicate events), and several actions between two reads are replayed in order.
-
-It refuses rather than guesses. The hand becomes invalid (no decisions until the next hand) when a seat faces a bet and shows neither call nor fold for 4 s, when a seat folded or "checked" but lost chips nobody saw, when a bet is smaller than a legal call, when board cards change, or when the game is not Hold'em. Softer disagreements (stack or pot mismatch, a call button that shows a different amount than the engine computes, a turn the engine does not expect) lower `confidence`; below the threshold (default 0.7) the bot pauses. A hand whose ending was inferred, or that had an unexplained stack mismatch, is stored for review but never applied to profiles.
+Described in full in [TRACKING.md](TRACKING.md). In short: the tracker holds one engine hand and explains each observation as legal actions, each tagged with its evidence (chips shown, fold shown, action passed with an unchanged stack, stack change across a street). The seat the page shows acting (observed actor) and the seat the engine expects (predicted actor) are kept apart and compared on every read. Deductions are marked, wait for a settled table, and are withdrawn if they contradict the page. No call is ever assumed. Contradictions become blockers that suspend decisions and state the reason; the hand becomes invalid only when the rules cannot explain an observation at all. A hand with an inferred ending, an unconfirmed deduction or an unexplained stack is stored for review but never applied to profiles.
 
 ## Manifest V3 lifecycle
 

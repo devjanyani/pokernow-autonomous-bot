@@ -24,6 +24,10 @@ export interface SeatObs {
   hasCards: boolean;
   /** Cards shown at showdown (opponents) when visible. */
   shownCards: CardId[] | null;
+  /** Marked offline / away by the site. Says nothing about whether the player was dealt in. */
+  disconnected?: boolean;
+  /** Raw class list of the seat element (diagnostics only: shows how the site marks fold, away ...). */
+  cls?: string;
 }
 
 export interface ControlsObs {
@@ -63,6 +67,8 @@ export interface TableObs {
   timeRemainingMs: number | null;
   /** Problems found while reading (unparseable card, missing element ...). */
   problems: string[];
+  /** Raw visible texts kept for diagnostics only (never used for decisions). */
+  raw?: { buttons: string[]; signal: string | null; pot: string | null; timer: string | null };
 }
 
 export function emptyControls(): ControlsObs {

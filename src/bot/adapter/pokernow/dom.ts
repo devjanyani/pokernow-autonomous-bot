@@ -27,7 +27,9 @@ export const SELECTORS = {
   stack: '.table-player-stack',
   bet: '.table-player-bet-value',
   foldedClass: /(?:^|\s)(fold|folded)(?:\s|$)/,
-  sittingOutClass: /(?:^|\s)(sitting-out|sit-out|standing-up|offline|away|quitting|waiting)(?:\s|$)/,
+  sittingOutClass: /(?:^|\s)(sitting-out|sit-out|standing-up|quitting|waiting)(?:\s|$)/,
+  /** Offline / away is NOT sitting out: such a player can still hold cards and blinds in the current hand. */
+  disconnectedClass: /(?:^|\s)(offline|away|disconnected)(?:\s|$)/,
   seatCards: '.table-player-cards .card',
   card: '.card',
   cardValue: '.value',
@@ -132,6 +134,7 @@ export class PokerNowDom implements TableDriver {
         seat, name, playerId: el.getAttribute('data-player-id'), stack, bet,
         folded: sel.foldedClass.test(el.className), sittingOut: sel.sittingOutClass.test(el.className),
         isHero, hasCards: cardEls.length > 0, shownCards: !isHero && shown.length === 2 ? shown : null,
+        disconnected: sel.disconnectedClass.test(el.className), cls: String(el.className).slice(0, 200),
       });
     }
     const dealerEl = doc.querySelector(sel.dealer);
@@ -173,6 +176,12 @@ export class PokerNowDom implements TableDriver {
       toActSeat: tm ? Number(tm[1]) : null, heroToAct, controls,
       timeRemainingMs: tsec ? (tsec[2] !== undefined ? Number(tsec[1]) * 60 + Number(tsec[2]) : Number(tsec[1])) * 1000 : null,
       problems,
+      raw: {
+        buttons: Array.from(doc.querySelectorAll(`${sel.controls.split(',').map((c) => `${c.trim()} button`).join(', ')}, button.fold, button.check, button.call, button.raise`)).filter((b) => visible(b)).map((b) => `${String((b as HTMLElement).className).slice(0, 60)}|${(b.textContent ?? '').trim().slice(0, 40)}`).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12),
+        signal: doc.querySelector(sel.heroTurnSignal)?.textContent?.trim().slice(0, 40) ?? null,
+        pot: doc.querySelector('.table-pot-size')?.textContent?.trim().slice(0, 60) ?? null,
+        timer: timerText ? timerText.slice(0, 20) : null,
+      },
     };
   }
 

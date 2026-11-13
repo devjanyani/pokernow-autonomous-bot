@@ -45,7 +45,7 @@ Popup, then **Open dashboard**.
 - **Live**: hand, position, cards, board, pot, effective stack, players seated / dealt in / still in, heads-up or multiway, equity, candidate actions with EV and play frequency, the reasoning, opponent range estimates, state confidence, deadline, last execution.
 - **Opponents**: every profile with counts, opportunities, shrunk estimates and intervals, style probabilities, evidence-gated observations, bet sizes, showdowns.
 - **Hand review**: stored hands with the full action and the bot's decision at each of its turns.
-- **Diagnostics**: which page elements were found, read problems, the event log.
+- **Diagnostics**: six separate state checks, observed versus predicted actor, the action timeline of the current hand, player participation, discrepancies, **Export Debug Bundle**, which page elements were found, the event log. See [TRACKING.md](TRACKING.md).
 - **Settings**: think time, confidence threshold, assumed clock, selector overrides, PokerNow log import, export, delete.
 
 ## Run simulated games (no browser)
@@ -85,5 +85,6 @@ npm test                     # everything, including the original repository's s
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, data flow, Manifest V3 lifecycle, security.
 - [STRATEGY.md](STRATEGY.md): the mathematics, how heads-up and multiway are chosen, and where every piece of strategic knowledge comes from.
+- [TRACKING.md](TRACKING.md): state reconstruction, turn tracking, the debug bundle, replay, and the steps for the next live test.
 - [STORAGE.md](STORAGE.md): the local data schema.
 - [LIMITATIONS.md](LIMITATIONS.md): what is tested, what is not, failure modes, and the prioritised to-do list.

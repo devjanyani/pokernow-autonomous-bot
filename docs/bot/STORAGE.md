@@ -2,7 +2,7 @@
 
 Everything is stored in the browser profile, in the extension's own origin. Nothing is uploaded. Types are in `src/bot/ext/records.ts` and `src/bot/opponents/profile.ts`; the database code is `src/bot/ext/storage.ts`.
 
-## IndexedDB database `poker-bot`, version 1
+## IndexedDB database `poker-bot`, version 2
 
 | Store | Key | Indexes | Value | Cap |
 |---|---|---|---|---|
@@ -10,6 +10,10 @@ Everything is stored in the browser profile, in the extension's own origin. Noth
 | `hands` | `handId` | `ts` | `HandRecord` | 5,000 (oldest pruned) |
 | `decisions` | auto-increment | `handId`, `ts` | `DecisionRecord` | 20,000 |
 | `diagnostics` | auto-increment | `ts` | `DiagnosticRecord` | 2,000 |
+| `frames` (v2) | auto-increment | `ts` (wall clock), `handKey` | `DebugFrame` (`src/bot/diag/recorder.ts`) | 6,000 (oldest pruned and counted) |
+| `meta` (v2) | `key` | none | counters, currently `framesPruned` | none |
+
+Version 2 only adds stores; existing data is kept. `frames` holds the diagnostic recording described in [TRACKING.md](TRACKING.md): what the table showed and what the reconstruction made of it. It contains player names and Hero's own cards, no credentials and no hidden cards.
 
 A completed hand and the profiles it changed are written in **one transaction**, and only if the hand id is not already stored. A repeated message therefore cannot double-count.
 
@@ -91,4 +95,6 @@ The charts are plain TypeScript objects under version control, so every range ca
 
 ## Export and deletion
 
-Dashboard, Settings: **Export all local data (JSON)** and **Delete all profiles, hands and logs**.
+Dashboard, Settings: **Export all local data (JSON)** and **Delete all profiles, hands and logs** (this also deletes recorded frames).
+
+Dashboard, Diagnostics: **Export Debug Bundle** (recent hands' frames, with an option to replace names and the table id by placeholders, and a review box) and **Delete recorded frames**. Recording can be switched off there (`settings.recordDiagnostics`).

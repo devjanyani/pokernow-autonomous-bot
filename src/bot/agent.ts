@@ -85,6 +85,13 @@ export class BotAgent {
     let pick = candidates[chosen];
     let input: ActionInput = { seat: heroSeat, kind: pick.action, to: pick.to };
     const basis = extra.basis.slice();
+    // Free-check rule, enforced in one place for every strategy branch and every street:
+    // folding is never returned when checking costs nothing.
+    if (pick.action === 'fold' && prep.la.canCheck) {
+      basis.push('rule: a check is free here, so the fold was replaced by a check');
+      pick = { action: 'check', label: 'check', ev: null, evSe: null, freq: 1 };
+      input = { seat: heroSeat, kind: 'check' };
+    }
     // Final legality gate: nothing leaves the agent that the rules engine rejects.
     if (validateAction(h, input)) {
       const safe = prep.la.canCheck ? 'check' : 'fold';

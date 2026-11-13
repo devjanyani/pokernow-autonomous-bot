@@ -8,6 +8,9 @@ import { cardStr } from '../cards';
 import type { CompletedHand } from '../adapter/tracker';
 import type { Decision } from '../strategy/types';
 import type { PlayerProfile } from '../opponents/profile';
+import type { DebugFrame } from '../diag/recorder';
+import type { TimelineEntry } from '../diag/timeline';
+import type { SeatParticipation } from '../adapter/tracker';
 
 export type Mode = 'manual' | 'recommend' | 'autonomous';
 
@@ -34,12 +37,14 @@ export interface Settings {
   timeoutAction: 'check-fold' | 'nothing';
   /** Optional CSS selector overrides for the PokerNow adapter (key -> selector). */
   selectorOverrides: Record<string, string>;
+  /** Keep a bounded local recording of observations and reconstruction for the debug bundle. */
+  recordDiagnostics: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1, mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [],
   exploitWeight: 1, minThinkMs: 600, maxThinkMs: 2200, assumedClockMs: 20000, minConfidence: 0.7,
-  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {},
+  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true,
 };
 
 const clamp = (x: unknown, lo: number, hi: number, def: number): number => {
@@ -67,6 +72,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     assumedClockMs: clamp(r.assumedClockMs, 3000, 120000, d.assumedClockMs),
     minConfidence: clamp(r.minConfidence, 0.4, 1, d.minConfidence),
     showPanel: r.showPanel !== false, timeoutAction: r.timeoutAction === 'nothing' ? 'nothing' : 'check-fold', selectorOverrides: overrides,
+    recordDiagnostics: r.recordDiagnostics !== false,
   };
 }
 
@@ -84,7 +90,7 @@ export interface HandRecord {
   ante: number;
   board: string[];
   seats: { seat: number; name: string; playerId: string; position: string | null; startStack: number; endStack: number; folded: boolean; dealtIn: boolean; shown: string[] | null }[];
-  events: { seq: number; seat: number; street: string; kind: string; amount: number; to: number; allIn: boolean; potBefore: number }[];
+  events: { seq: number; seat: number; street: string; kind: string; amount: number; to: number; allIn: boolean; potBefore: number; source?: string; inferred?: boolean; uncertain?: boolean }[];
   heroSeat: number | null;
   heroCards: string[] | null;
   heroNet: number | null;
@@ -102,7 +108,7 @@ export function toHandRecord(c: CompletedHand, tableId: string, ts: number): Han
       seat: s.seat, name: s.name, playerId: s.playerId, position: s.pos?.label ?? null, startStack: s.startStack, endStack: s.stack,
       folded: s.folded, dealtIn: s.dealtIn, shown: c.reveals.has(s.seat) ? c.reveals.get(s.seat)!.map(cardStr) : null,
     })),
-    events: h.events.map((e) => ({ seq: e.seq, seat: e.seat, street: e.street, kind: e.kind, amount: e.amount, to: e.to, allIn: e.allIn, potBefore: e.potBefore })),
+    events: h.events.map((e) => ({ seq: e.seq, seat: e.seat, street: e.street, kind: e.kind, amount: e.amount, to: e.to, allIn: e.allIn, potBefore: e.potBefore, source: c.meta?.[e.seq]?.source, inferred: c.meta?.[e.seq]?.inferred, uncertain: c.meta?.[e.seq]?.uncertain })),
     heroSeat: c.heroSeat, heroCards: c.heroCards ? c.heroCards.map(cardStr) : null,
     heroNet: hero && h.phase === 'complete' ? hero.stack - hero.startStack : null,
     wentToShowdown: h.wentToShowdown, valid: c.valid, observedToEnd: c.observedToEnd,
@@ -120,6 +126,50 @@ export interface DecisionRecord {
   decision: Decision;
   /** What happened to it: shown only, executed, rejected ... */
   execution: { status: string; reason: string; ms: number } | null;
+  /** The exact state the recommendation was computed for. */
+  context?: RecommendationContext;
+}
+
+/** What a recommendation belongs to. It is stale as soon as any of this changes. */
+export interface RecommendationContext {
+  key: string;
+  handId: string;
+  street: string;
+  /** State version: number of reconstructed events when the decision was requested. */
+  version: number;
+  heroSeat: number;
+  toCall: number;
+  canCheck: boolean;
+  canRaise: boolean;
+  minRaiseTo: number;
+  maxRaiseTo: number;
+  opponents: number;
+}
+
+export interface Recommendation {
+  /** off: manual mode. none: not Hero's turn. thinking / ready: for the CURRENT state. blocked: Hero's turn but suppressed. */
+  state: 'off' | 'none' | 'thinking' | 'ready' | 'blocked';
+  /** Why there is no recommendation (always set unless thinking / ready). */
+  reason: string | null;
+  context: RecommendationContext | null;
+}
+
+export type Level = 'ok' | 'warn' | 'bad' | 'na';
+export interface Indicator { level: Level; detail: string }
+/** Six separate answers instead of one confidence number. */
+export interface Readiness {
+  /** Can the extension read the required table information? */
+  observation: Indicator;
+  /** Does the reconstructed state agree with the available evidence? */
+  consistency: Indicator;
+  /** Is the current actor established reliably? */
+  turn: Indicator;
+  /** Are Hero's available actions known and confirmed by the buttons? */
+  legal: Indicator;
+  /** Can a recommendation be produced safely right now? */
+  decision: Indicator;
+  /** How reliable are the equity and EV estimates behind the recommendation? */
+  strategy: Indicator;
 }
 
 export interface DiagnosticRecord { ts: number; level: 'info' | 'warn' | 'error'; source: string; message: string; data?: unknown }
@@ -133,7 +183,21 @@ export interface LiveState {
   estop: boolean;
   status: string;
   observation: { health: Record<string, boolean>; problems: string[]; heroToAct: boolean; timeRemainingMs: number | null };
-  tracker: { valid: boolean; confidence: number; unsupported: boolean; issues: string[]; waitingReason: string | null; handsSeen: number };
+  tracker: {
+    valid: boolean;
+    /** Heuristic score in 0..1, NOT a probability. */
+    confidence: number;
+    unsupported: boolean; issues: string[]; waitingReason: string | null; handsSeen: number;
+    phase: string; consistency: string; settled: boolean; blockers: string[]; warnings: string[];
+    observedActor: number | null; predictedActor: number | null; turnStatus: string; heroStatus: string;
+    legal: { status: string; detail: string | null };
+    discrepancies: { ts: number; kind: string; message: string; street: string; eventCount: number; blocking: boolean }[];
+  };
+  recommendation: Recommendation;
+  readiness: Readiness;
+  recorder: { enabled: boolean; recorded: number; dropped: number };
+  participation: SeatParticipation[];
+  timeline: TimelineEntry[];
   hand: null | {
     handId: string; street: string; phase: string; board: string[]; pot: number; heroSeat: number | null; heroCards: string[] | null;
     heroPosition: string | null; effectiveStackBB: number | null; bigBlind: number;
@@ -150,6 +214,7 @@ export type BotMessage =
   | { type: 'bot/hand'; hand: HandRecord; profiles: PlayerProfile[] }
   | { type: 'bot/decision'; record: DecisionRecord }
   | { type: 'bot/diag'; record: DiagnosticRecord }
+  | { type: 'bot/frames'; frames: DebugFrame[] }
   | { type: 'bot/loadProfiles'; ids: string[] };
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -162,6 +227,7 @@ export function parseBotMessage(raw: unknown): BotMessage | null {
     case 'bot/hand': return isObj(raw.hand) && typeof raw.hand.handId === 'string' && Array.isArray(raw.hand.events) && Array.isArray(raw.profiles) && raw.profiles.length <= 12 ? (raw as unknown as BotMessage) : null;
     case 'bot/decision': return isObj(raw.record) && typeof raw.record.handId === 'string' && isObj(raw.record.decision) ? (raw as unknown as BotMessage) : null;
     case 'bot/diag': return isObj(raw.record) && typeof raw.record.message === 'string' && raw.record.message.length < 2000 ? (raw as unknown as BotMessage) : null;
+    case 'bot/frames': return Array.isArray(raw.frames) && raw.frames.length <= 60 && raw.frames.every((f) => isObj(f) && isObj(f.obs) && typeof f.wall === 'number' && typeof f.n === 'number') ? (raw as unknown as BotMessage) : null;
     case 'bot/loadProfiles': return Array.isArray(raw.ids) && raw.ids.length <= 12 && raw.ids.every((i) => typeof i === 'string' && i.length < 200) ? (raw as unknown as BotMessage) : null;
     default: return null;
   }

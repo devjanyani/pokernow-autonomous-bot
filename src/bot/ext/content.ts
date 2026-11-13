@@ -45,6 +45,7 @@ class Panel {
       .row{display:flex;justify-content:space-between;gap:8px}.k{color:#9aa0aa}.act{font-size:14px;font-weight:700;color:#8ab4ff}
       .stop{background:#c62828;color:#fff;border:0;border-radius:5px;padding:5px 8px;font-weight:700;cursor:pointer;width:100%}
       .stop:focus-visible{outline:2px solid #fff}.small{color:#9aa0aa;font-size:11px;overflow-wrap:anywhere}
+      .blk{font-weight:700;color:#f0b429}.stat{color:#e8eaed;overflow-wrap:anywhere}
     `;
     const p = document.createElement('div');
     p.className = 'p';
@@ -64,7 +65,9 @@ class Panel {
   render(l: LiveState): void {
     if (!this.root || !this.body) return;
     const dot = this.root.querySelector('.dot') as HTMLElement;
-    dot.className = `dot ${l.estop ? 'bad' : !l.tracker.valid && l.hand ? 'bad' : l.tracker.confidence >= 0.7 ? 'ok' : l.hand ? 'warn' : ''}`;
+    const r = l.readiness;
+    const worst = [r.observation, r.consistency, r.turn, r.legal, r.decision].some((i) => i.level === 'bad') ? 'bad' : [r.observation, r.consistency, r.turn, r.legal].some((i) => i.level === 'warn') ? 'warn' : l.hand ? 'ok' : '';
+    dot.className = `dot ${l.estop ? 'bad' : worst}`;
     (this.root.querySelector('.m') as HTMLElement).textContent = l.estop ? 'STOPPED' : l.acting ? 'AUTO' : l.mode;
     const rows: [string, string][] = [];
     const h = l.hand;
@@ -73,6 +76,8 @@ class Panel {
       rows.push(['Board', h.board.join(' ') || h.street]);
       rows.push(['Pot', `${h.pot} (${(h.pot / h.bigBlind).toFixed(1)}bb)`]);
       if (h.counts) rows.push(['Players', `${h.counts.contesting}/${h.counts.dealtIn} in · ${h.counts.headsUpTable ? 'HU table' : h.counts.potType}`]);
+      const who = (seat: number | null) => { const p = h.players.find((x) => x.seat === seat); return seat === null ? '–' : p ? `${p.position ?? `seat ${seat}`}` : `seat ${seat}`; };
+      rows.push(['Turn', l.tracker.turnStatus === 'agree' ? `${who(l.tracker.predictedActor)} ✓` : l.tracker.turnStatus === 'disagree' ? `table ${who(l.tracker.observedActor)} ≠ engine ${who(l.tracker.predictedActor)}` : l.tracker.turnStatus === 'unobserved' ? `${who(l.tracker.predictedActor)} (engine only)` : '–']);
     }
     const d = l.decision;
     if (d?.equity) rows.push(['Equity', `${(100 * d.equity.equity).toFixed(1)}% ±${(196 * d.equity.stdErr).toFixed(1)}`]);
@@ -83,14 +88,18 @@ class Panel {
       const b = document.createElement('span'); b.textContent = v;
       r.append(a, b); this.body.append(r);
     }
+    if (l.recommendation.state === 'blocked') {
+      const w = document.createElement('div'); w.className = 'blk'; w.textContent = 'Decision unavailable — state reconciliation required.';
+      const why = document.createElement('div'); why.className = 'small'; why.textContent = l.recommendation.reason ?? '';
+      this.body.append(w, why);
+    }
     if (d && l.mode !== 'manual') {
       const a = document.createElement('div'); a.className = 'act'; a.textContent = `${d.provisional ? '… ' : ''}${d.label}`;
       const s = document.createElement('div'); s.className = 'small';
       s.textContent = d.candidates.filter((c) => c.freq > 0.01 || c.ev !== null).slice(0, 6).map((c) => `${c.label}${c.ev !== null ? ` ${c.ev >= 0 ? '+' : ''}${c.ev.toFixed(0)}` : ''}${c.freq > 0.01 && c.freq < 0.99 ? ` ${(100 * c.freq).toFixed(0)}%` : ''}`).join(' · ');
       this.body.append(a, s);
     }
-    const st = document.createElement('div'); st.className = 'small'; st.textContent = l.status;
-    this.body.append(st);
+    if (l.recommendation.state !== 'blocked') { const st = document.createElement('div'); st.className = d ? 'small' : 'stat'; st.textContent = l.status; this.body.append(st); }
     const stop = document.createElement('button');
     stop.className = 'stop'; stop.textContent = l.estop ? 'Stopped (re-enable in the popup)' : 'EMERGENCY STOP';
     stop.disabled = l.estop;
@@ -154,6 +163,9 @@ async function main(): Promise<void> {
     try { controller.tick(); } catch (e) { send({ type: 'bot/diag', record: { ts: Date.now(), level: 'error', source: 'content', message: `tick failed: ${(e as Error).message}` } }); }
   };
   setInterval(tick, POLL_MS);
+  // Hand any recorded frames to storage before the page goes away.
+  addEventListener('pagehide', () => controller.flush());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') controller.flush(); });
   // React to page changes sooner than the poll, coalesced to one read per frame.
   new MutationObserver(() => { if (!scheduled) { scheduled = true; setTimeout(tick, 40); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   send({ type: 'bot/diag', record: { ts: Date.now(), level: 'info', source: 'content', message: `attached to ${location.pathname} in ${settings.mode} mode` } });

@@ -1,22 +1,25 @@
 // ============================================================
 // Local persistence (IndexedDB in the EXTENSION origin, never the poker site's).
 //
-// Database "poker-bot" v1
+// Database "poker-bot" v2
 //   profiles     key playerId            PlayerProfile
 //   hands        key handId, index ts    HandRecord            (capped)
 //   decisions    autoIncrement, index handId, index ts  DecisionRecord (capped)
 //   diagnostics  autoIncrement, index ts DiagnosticRecord      (capped)
+//   frames       autoIncrement, index ts (wall clock), index handKey  DebugFrame (capped, v2)
+//   meta         key 'key'               counters (frames pruned)             (v2)
 //
 // Opened fresh for every operation batch so it works from a Manifest V3
 // service worker that may be stopped at any time. Nothing leaves the machine.
 // ============================================================
 
 import { PlayerProfile, sanitizeProfile } from '../opponents/profile';
+import type { DebugFrame } from '../diag/recorder';
 import { DecisionRecord, DiagnosticRecord, HandRecord } from './records';
 
 export const DB_NAME = 'poker-bot';
-export const DB_VERSION = 1;
-export const CAPS = { hands: 5000, decisions: 20000, diagnostics: 2000 };
+export const DB_VERSION = 2;
+export const CAPS = { hands: 5000, decisions: 20000, diagnostics: 2000, frames: 6000 };
 
 function open(idb: IDBFactory): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -30,6 +33,11 @@ function open(idb: IDBFactory): Promise<IDBDatabase> {
         s.createIndex('handId', 'handId'); s.createIndex('ts', 'ts');
       }
       if (!db.objectStoreNames.contains('diagnostics')) db.createObjectStore('diagnostics', { autoIncrement: true }).createIndex('ts', 'ts');
+      if (!db.objectStoreNames.contains('frames')) {
+        const s = db.createObjectStore('frames', { autoIncrement: true });
+        s.createIndex('ts', 'wall'); s.createIndex('handKey', 'handKey');
+      }
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -101,8 +109,30 @@ export class BotStorage {
     if (Math.random() < 0.05) await this.prune('diagnostics', CAPS.diagnostics);
   }
 
+  /** Append recorder frames. Storage is bounded: the oldest frames are pruned and counted. */
+  async saveFrames(frames: DebugFrame[], cap = CAPS.frames): Promise<void> {
+    if (!frames.length) return;
+    await this.tx(['frames'], 'readwrite', (tx) => { for (const f of frames) tx.objectStore('frames').add(f); });
+    const removed = await this.prune('frames', cap);
+    if (removed > 0) {
+      await this.tx(['meta'], 'readwrite', async (tx) => {
+        const cur = await get(tx.objectStore('meta').get('framesPruned') as IDBRequest<{ key: string; value: number } | undefined>);
+        tx.objectStore('meta').put({ key: 'framesPruned', value: (cur?.value ?? 0) + removed });
+      });
+    }
+  }
+
+  /** Most recent frames, returned OLDEST FIRST. */
+  async recentFrames(limit = CAPS.frames): Promise<DebugFrame[]> { return (await this.recent<DebugFrame>('frames', limit)).reverse(); }
+
+  async framesPruned(): Promise<number> {
+    return this.tx(['meta'], 'readonly', async (tx) => (await get(tx.objectStore('meta').get('framesPruned') as IDBRequest<{ key: string; value: number } | undefined>))?.value ?? 0);
+  }
+
+  recentDecisions(limit = 500): Promise<DecisionRecord[]> { return this.recent('decisions', limit); }
+
   /** Delete the oldest rows beyond `cap`. */
-  async prune(store: 'hands' | 'decisions' | 'diagnostics', cap: number): Promise<number> {
+  async prune(store: 'hands' | 'decisions' | 'diagnostics' | 'frames', cap: number): Promise<number> {
     return this.tx([store], 'readwrite', async (tx) => {
       const s = tx.objectStore(store);
       const count = await get(s.count());
@@ -146,7 +176,7 @@ export class BotStorage {
     return { profiles: await this.allProfiles(), hands: await this.recentHands(CAPS.hands), diagnostics: await this.recentDiagnostics(CAPS.diagnostics) };
   }
 
-  async clear(stores: ('profiles' | 'hands' | 'decisions' | 'diagnostics')[]): Promise<void> {
+  async clear(stores: ('profiles' | 'hands' | 'decisions' | 'diagnostics' | 'frames' | 'meta')[]): Promise<void> {
     await this.tx(stores, 'readwrite', (tx) => { for (const s of stores) tx.objectStore(s).clear(); });
   }
 }

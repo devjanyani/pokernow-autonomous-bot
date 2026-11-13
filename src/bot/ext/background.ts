@@ -39,6 +39,9 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
       case 'bot/diag':
         await storage.saveDiagnostic(msg.record);
         return { ok: true };
+      case 'bot/frames':
+        await storage.saveFrames(msg.frames);
+        return { ok: true };
       case 'bot/loadProfiles':
         return { ok: true, profiles: await storage.loadProfiles(msg.ids) };
     }

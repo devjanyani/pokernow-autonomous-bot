@@ -2,6 +2,19 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.4.0 (2026-11-13)
+State reconstruction and turn tracking, after reports from recommend-mode play on real tables that the bot sometimes expected another seat while PokerNow showed Hero's turn. Tested on synthetic tables only; see `docs/bot/TRACKING.md`.
+- Fixed: a fold was recognised only from one unverified CSS class. A seat that faced a bet, added no chips and was passed by the action is now recorded as folded (marked as deduced, confirmed by its unchanged stack).
+- Fixed: a seat with an unknown action was assumed to have called when the next street appeared, which put chips in the pot that were never bet. A call is now accepted only when the stack fell by exactly that amount.
+- Fixed: the previous recommendation stayed on screen after Hero's turn ended. A recommendation now belongs to one decision point (hand, street, state version) and is recomputed every time the action returns to Hero.
+- Fixed: an offline or away marker removed a dealt-in player from the hand; a player who disappeared was folded at once.
+- New: observed actor and predicted actor are tracked separately; disagreements, stack and chip contradictions and button mismatches block the decision and state the reason ("Decision unavailable — state reconciliation required"). Six separate state indicators replace the single confidence number.
+- New: per-seat participation model, explicit statuses for Hero folded, Hero all-in, waiting for opponent.
+- New: a hand does not start until the blinds are where the button implies.
+- New: folding is never returned when a check is free, enforced in one place.
+- New: local diagnostic recorder, action timeline, **Export Debug Bundle** on the Diagnostics tab, and `npm run bot:replay` to replay a bundle offline. IndexedDB schema version 2 (adds `frames`, `meta`).
+- New: 36 regression tests (`tests/bot/tracking.test.ts`); recommend-only browser check with fold markers hidden (`npm run bot:e2e:recommend`).
+
 ## v0.3.0 (2026-11-13)
 - New extension build (`src/bot/`, `npm run build`): a fully local No-Limit Hold'em bot for PokerNow tables of 2 to 10 players. Manual, recommend and authorised autonomous modes, emergency stop, dashboard with hand review. See `docs/bot/`.
 - Shared rules engine with side pots, short all-in re-open rule, antes and straddle; multiway Monte Carlo EV engine; opponent profiles with opportunity counts and shrinkage; adaptive decision time.

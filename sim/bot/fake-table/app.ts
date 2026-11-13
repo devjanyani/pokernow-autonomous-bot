@@ -20,7 +20,11 @@ const N = Math.max(2, Math.min(10, Number(params.get('players') ?? 6)));
 const HERO = 0;
 const rng = new Rng(Number(params.get('seed') ?? 11));
 const policies = Array.from({ length: N }, (_, i) => archetypePolicy((['loose-passive', 'tight-aggressive', 'loose-aggressive', 'tight-passive'] as const)[i % 4]));
-const stats = { hands: 0, heroActions: 0, illegalClicks: 0, errors: [] as string[] };
+// hideFolds=1: folded seats keep their cards and get no fold class (a fold marker the adapter does not recognise).
+// auto=<ms>: when nobody clicks for Hero within <ms>, the table plays check / call for Hero (a person playing by hand).
+const HIDE_FOLDS = params.get('hideFolds') === '1';
+const AUTO_MS = Number(params.get('auto') ?? 0);
+const stats = { hands: 0, heroActions: 0, autoActions: 0, illegalClicks: 0, errors: [] as string[] };
 (window as unknown as { __stats: typeof stats }).__stats = stats;
 
 let h: HandState;
@@ -41,7 +45,9 @@ function heroAct(kind: 'fold' | 'check' | 'call' | 'bet' | 'raise', to?: number)
 }
 
 function draw(): void {
-  root.innerHTML = toHtml(render(h, HERO, holes, performance.now()));
+  const o = render(h, HERO, holes, performance.now());
+  if (HIDE_FOLDS && h.phase !== 'complete') for (const s of o.seats) { const e = h.seats.find((x) => x.seat === s.seat)!; if (e.folded && s.seat !== HERO) { s.folded = false; s.hasCards = true; } }
+  root.innerHTML = toHtml(o);
   root.querySelector('button.fold')?.addEventListener('click', () => heroAct('fold'));
   root.querySelector('button.check')?.addEventListener('click', () => heroAct('check'));
   root.querySelector('button.call')?.addEventListener('click', () => heroAct('call'));
@@ -71,7 +77,20 @@ function step(): void {
     setTimeout(() => { completeHand(h, (s) => evaluateHand([...holes.get(s)!, ...h.board])); step(); }, 900);
     return;
   }
-  if (h.toAct === HERO) return; // wait for a click
+  if (h.toAct === HERO) {
+    // Wait for a click; optionally act for Hero after a pause, like a person playing by hand.
+    if (AUTO_MS > 0) {
+      const at = h.events.length, hand = handNo;
+      setTimeout(() => {
+        if (hand !== handNo || h.events.length !== at || h.toAct !== HERO) return;
+        const la = legalActions(h)!;
+        applyAction(h, { seat: HERO, kind: la.canCheck ? 'check' : la.callAmount <= 60 ? 'call' : 'fold' });
+        stats.autoActions++;
+        step();
+      }, AUTO_MS);
+    }
+    return;
+  }
   if (h.toAct !== null) {
     const seat = h.toAct;
     setTimeout(async () => {
