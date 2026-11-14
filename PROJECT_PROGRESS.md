@@ -4,6 +4,14 @@ Last updated: 2026-11-14. Branch `autonomous-bot`. Version 0.6.0.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md).
 
+## Checkpoint (2026-11-14, end of session)
+
+- Branch `autonomous-bot`; latest code commit `921447a` (v0.6.0), pushed to remote `private`. Working tree clean apart from this file; `dist/` is built at 0.6.0.
+- Nothing is half-done in the source. What is unfinished is verification: the full `npm test`, `npm run bot:strategy-bench` and `npm run bot:e2e:recommend` have not produced a result for 0.6.0 (the first two were stopped by the system for low memory, the third was not run).
+- `debug_bundles/` holds three local bundles (2026-11-13, 19:25, 20:06, 21:22 UTC). The folder is git-ignored and nothing in it is tracked.
+- To resume: `git pull private autonomous-bot`, `npm install` if `node_modules` is missing, `npm run test:bot` (expect 257 passing, about a minute), then "Next steps" item 0, one command at a time with other programs closed.
+- Open strategy bug to pick up after that: the heads-up bottom-pair lead (see "Open issue" under "Version 0.6.0").
+
 ## Where things stand
 
 **0.6.0 (latest): strategy engine.** An audit against the recorded hands confirmed nine defects in how the engine chose actions, including the one behind "bet bottom pair into the preflop raiser". The postflop engine and the opponent model were replaced; the old engine is kept as a runnable baseline. A strategy library with importers was added; no solver data exists to put in it yet. **The comparison benchmark did not complete and no gain in win rate is claimed.** Details in "Version 0.6.0" below.
