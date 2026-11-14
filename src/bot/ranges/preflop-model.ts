@@ -8,7 +8,10 @@
 // ============================================================
 
 import { ActionEvent, HandState, seatOf } from '../table/engine';
-import { Band, Range, fullRange, rangeFromBands } from './range';
+import { Band, CLASS_ORDER, COMBO_CLASS, Range, fullRange, rangeFraction, rangeFromBands, rangeFromClasses, topRange } from './range';
+import type { StrategyLibrary, SpotMatch } from '../strategy/library/library';
+import type { PreflopScenario } from '../strategy/library/types';
+import { NUM_COMBOS } from '../cards';
 import { NEUTRAL, Tendencies } from './postflop-model';
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -50,6 +53,12 @@ export interface PreflopLine {
   /** Stack in big blinds at the start of the hand. */
   stackBB: number;
   behind: number;
+  /** Players left to act behind the raiser this seat last responded to (or behind the opener for its own 3-bet); null if none. */
+  facedBehind: number | null;
+  /** Callers between that raise and this seat's action. */
+  callersBefore: number;
+  /** Limpers before this seat's action. */
+  limpersBefore: number;
 }
 
 /** Classify a seat's preflop line from the event log. */
@@ -61,9 +70,13 @@ export function preflopLine(h: HandState, seat: number): PreflopLine {
   let raises = 0, limpers = 0;
   let openerOpen = selfOpen;
   let kind: PreflopLineKind = 'unacted';
+  let lastRaiser: number | null = null, callersSince = 0;
+  let facedBehind: number | null = null, callersBefore = 0, limpersBefore = 0;
   for (const e of h.events as ActionEvent[]) {
     if (e.street !== 'preflop' || e.kind.startsWith('post')) continue;
     if (e.seat === seat) {
+      facedBehind = lastRaiser === null ? null : seatOf(h, lastRaiser).pos!.behindPreflop;
+      callersBefore = callersSince; limpersBefore = limpers;
       if (e.kind === 'check') kind = 'bb-check';
       else if (e.kind === 'raise') {
         const committedFrac = (e.to + (s.totalCommit - s.streetCommit)) / Math.max(1e-9, s.startStack);
@@ -78,10 +91,10 @@ export function preflopLine(h: HandState, seat: number): PreflopLine {
     }
     if (e.kind === 'raise') {
       if (raises === 0) openerOpen = openFraction(seatOf(h, e.seat).pos!.behindPreflop, hu);
-      raises++;
-    } else if (e.kind === 'call' && raises === 0) limpers++;
+      raises++; lastRaiser = e.seat; callersSince = 0;
+    } else if (e.kind === 'call') { if (raises === 0) limpers++; else callersSince++; }
   }
-  return { kind, selfOpen, openerOpen, stackBB, behind: s.pos!.behindPreflop };
+  return { kind, selfOpen, openerOpen, stackBB, behind: s.pos!.behindPreflop, facedBehind, callersBefore, limpersBefore };
 }
 
 export function bandsForLine(line: PreflopLine, t: Tendencies = NEUTRAL): Band[] {
@@ -106,9 +119,78 @@ export function bandsForLine(line: PreflopLine, t: Tendencies = NEUTRAL): Band[]
   }
 }
 
-/** Estimated preflop range for a seat given everything it has done so far this hand. */
-export function opponentPreflopRange(h: HandState, seat: number, t: Tendencies = NEUTRAL): { range: Range; line: PreflopLine } {
+/** Which library spot and which of its actions describe a preflop line (null: the library has no table for this kind of line). */
+const LINE_SPOT: Partial<Record<PreflopLineKind, { scenario: PreflopScenario; actions: ('call' | 'raise' | 'allin')[]; knob: 'L' | 'A' }>> = {
+  open: { scenario: 'rfi', actions: ['raise', 'allin'], knob: 'A' },
+  iso: { scenario: 'vs-limp', actions: ['raise', 'allin'], knob: 'A' },
+  'call-open': { scenario: 'vs-open', actions: ['call'], knob: 'L' },
+  'bb-defend': { scenario: 'vs-open', actions: ['call'], knob: 'L' },
+  '3bet': { scenario: 'vs-open', actions: ['raise', 'allin'], knob: 'A' },
+  'call-3bet': { scenario: 'vs-3bet', actions: ['call'], knob: 'L' },
+  '4bet': { scenario: 'vs-3bet', actions: ['raise', 'allin'], knob: 'A' },
+  'call-4bet': { scenario: 'vs-4bet', actions: ['call'], knob: 'L' },
+  '5bet': { scenario: 'vs-4bet', actions: ['raise', 'allin'], knob: 'A' },
+};
+
+/**
+ * Widen or narrow a chart range for a measured tendency (1 = unchanged). Wider: the next-best hands of the
+ * equity ordering are added. Narrower: the weakest hands of the range are dropped. HEURISTIC adjustment.
+ */
+export function scaleRange(r: Range, s: number): Range {
+  if (Math.abs(s - 1) < 0.05) return r;
+  const frac = rangeFraction(r);
+  if (s > 1) {
+    const wide = topRange(Math.min(0.95, frac * s));
+    const out = new Float64Array(r);
+    for (let k = 0; k < NUM_COMBOS; k++) if (wide[k] > out[k]) out[k] = wide[k];
+    return out;
+  }
+  // Keep classes from the strong end of the equity ordering until the mass is frac * s.
+  let keep = frac * s * NUM_COMBOS;
+  const mass = new Map<string, number>();
+  for (let k = 0; k < NUM_COMBOS; k++) if (r[k] > 0) mass.set(COMBO_CLASS[k], (mass.get(COMBO_CLASS[k]) ?? 0) + r[k]);
+  const factor = new Map<string, number>();
+  for (const c of CLASS_ORDER) {
+    const m = mass.get(c.name) ?? 0;
+    if (m <= 0) continue;
+    const f = Math.max(0, Math.min(1, keep / m));
+    factor.set(c.name, f);
+    keep -= m * f;
+  }
+  const out = new Float64Array(NUM_COMBOS);
+  for (let k = 0; k < NUM_COMBOS; k++) if (r[k] > 0) out[k] = r[k] * (factor.get(COMBO_CLASS[k]) ?? 0);
+  return out;
+}
+
+export interface PreflopRangeEstimate { range: Range; line: PreflopLine; basis: 'precomputed-chart' | 'solver' | 'computed' | 'heuristic'; source: string }
+
+/**
+ * Estimated preflop range for a seat given everything it has done so far this hand.
+ * With a library, a line that a strategy pack covers (open, isolation raise, call or 3-bet of an open,
+ * call or 4-bet of a 3-bet) takes the pack's range for that seat, adjusted for the player's measured
+ * tendencies; anything else falls back to the percentile bands.
+ */
+export function opponentPreflopRange(h: HandState, seat: number, t: Tendencies = NEUTRAL, lib?: StrategyLibrary): PreflopRangeEstimate {
   const line = preflopLine(h, seat);
-  if (line.kind === 'unacted') return { range: fullRange(), line };
-  return { range: rangeFromBands(bandsForLine(line, t)), line };
+  if (line.kind === 'unacted') return { range: fullRange(), line, basis: 'heuristic', source: 'has not acted: any two cards' };
+  const map = lib ? LINE_SPOT[line.kind] : undefined;
+  if (lib && map) {
+    const players = h.seats.filter((x) => x.dealtIn).length;
+    const q = {
+      scenario: line.kind === 'iso' && line.behind === 0 ? 'bb-vs-limp' as PreflopScenario : map.scenario, players, heroBehind: line.behind, villainBehind: line.facedBehind ?? undefined,
+      limpers: line.limpersBefore, callers: line.callersBefore, effStackBB: seatOf(h, seat).startStack / h.bigBlind, anteBB: h.ante / h.bigBlind,
+    };
+    let m: SpotMatch | null = lib.find(q);
+    // A chart made for "no caller in between" is still the nearest description when there were callers.
+    if (!m && map.scenario === 'vs-open' && line.callersBefore > 0) m = lib.find({ ...q, callers: 0 });
+    if (m) {
+      const w = lib.classWeights(m, map.actions);
+      if (w.size > 0) {
+        const base = rangeFromClasses(w);
+        const range = scaleRange(base, map.knob === 'A' ? t.preflopAggression : t.looseness);
+        return { range, line, basis: m.basisTag as PreflopRangeEstimate['basis'], source: lib.cite(m) };
+      }
+    }
+  }
+  return { range: rangeFromBands(bandsForLine(line, t)), line, basis: 'heuristic', source: 'percentile band of the equity ordering for this line' };
 }

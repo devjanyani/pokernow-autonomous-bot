@@ -1,10 +1,12 @@
 # Project progress
 
-Last updated: 2026-11-13. Branch `autonomous-bot`. Version 0.5.1.
+Last updated: 2026-11-14. Branch `autonomous-bot`. Version 0.6.0.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md).
 
 ## Where things stand
+
+**0.6.0 (latest): strategy engine.** An audit against the recorded hands confirmed nine defects in how the engine chose actions, including the one behind "bet bottom pair into the preflop raiser". The postflop engine and the opponent model were replaced; the old engine is kept as a runnable baseline. A strategy library with importers was added; no solver data exists to put in it yet. **The comparison benchmark did not complete and no gain in win rate is claimed.** Details in "Version 0.6.0" below.
 
 **0.5.1 (latest):** a second real recording showed tracking working on all five hands and one new failure: PokerNow's "Bet 5" shortcut was read as "Call 5", which blocked Hero's free check on the flop, turn and river. Buttons are now classified by their label. Details in "Version 0.5.1" below.
 
@@ -21,6 +23,43 @@ Version 0.5.0 fixes the turn-tracking failures found by replaying the first debu
 | Dashboard and overlay redesign | Done; checked in Chromium and on the recorded states |
 | Further live sessions (other table sizes, antes, all-ins, long soak) | **Not done** |
 | Autonomous play on a live table | Not attempted; stay in recommend mode |
+
+## Version 0.6.0: strategy
+
+Documents: [STRATEGY_AUDIT.md](docs/bot/STRATEGY_AUDIT.md) (audit, the recorded hand, defects, remaining weaknesses), [STRATEGY_LIBRARY.md](docs/bot/STRATEGY_LIBRARY.md) (packs, import formats, missing data), [STRATEGY.md](docs/bot/STRATEGY.md) section 8 (the mathematics of the new engine).
+
+Evidence: the three local debug bundles. Seventeen replayable hand records are kept anonymised in `tests/bot/fixtures/live-2026-11-13-hands.json`.
+
+**The hand.** Fixture `c-12`: Hero limp-called a raise with 5d 3h against advice, flop 5h 9d Kh, big blind checks, raiser still to act. Recorded advice: bet 9 into 28. Cause: not a "bet any pair" rule. A called bet was valued as a showdown with no further betting; a check was charged for a forced call; the big blind's check to the raiser deleted its strong hands; the raiser was modelled like any other player. Now: check +3.4, bet small +2.6. The engine no longer prefers the lead here, by a narrow margin.
+
+**Confirmed defects (each with a test that fails on the old engine):** one-round horizon; checking valued below folding; no betting lead; strength measured against all possible hands instead of ranges; range collapse on unlikely lines; a raise's width read from the seat instead of the line; realization discount on all-in calls; charts used outside their assumptions without saying so; nothing marking an off-range hand.
+
+**Changes.**
+- `strategy/postflop.ts` (new engine): this street and the next street played out; follow-ups are plans chosen on the average; pessimistic second scenario.
+- `ranges/range-model.ts`: strength inside the player's own range and against the others' ranges; betting lead; calibrated to the population priors already in the code.
+- `strategy/spot.ts`: preflop raiser, betting lead, position, bet names, off-range flag.
+- `strategy/villains.ts`: opponent ranges from chart packs where a line is covered; Hero's perceived range, separate from Hero's cards.
+- `strategy/library/`, `sim/bot/ranges.ts`: packs, validation, importers (JSON, text, CSV), coverage report.
+- `strategy/postflop-v1.ts`: the 0.5.1 engine, frozen. Checked: `engine: 'v1'` gives decisions identical to the 0.5.1 commit at all 39 recorded decision points (action, every EV, explanation, ranges).
+- Explanations: spot line, bet type and purpose, modelled replies, plan, and the warnings out-of-distribution / model-dependent / lower confidence.
+- Not changed: tracking, button reading, legal-action validation, the interface, the modes. Autonomous play stays off unless authorised.
+
+**Benchmark: not completed.** `npm run bot:strategy-bench` (held-out seed 2027, about an hour) was started and was stopped by the system when the machine ran low on memory, before it printed its first row. The full `npm test` run in parallel was stopped the same way. Neither was restarted. What exists instead is a pilot on a development seed, run before the last two parameter changes (how a measured fold rate is applied, and the pessimistic scenario):
+
+| Table (3,000 hands each, seed 31) | v2 bb/100 | v1 bb/100 | Paired difference (v2 − v1) |
+|---|---|---|---|
+| Six-handed, four archetypes and one equity-threshold player | +107.7 ± 48.1 | +107.9 ± 55.3 | −0.2 ± 37.3 |
+| Six-handed, three equity-threshold players, a calling station, a random player | +387.0 ± 109.1 | +461.3 ± 126.3 | −74.3 ± 75.1 |
+| Nine-handed mixed (includes a calling station) | +394.5 ± 90.3 | +447.5 ± 114.4 | −53.0 ± 72.8 |
+| Heads-up against the equity-threshold player | +48.7 ± 24.6 | +51.9 ± 27.4 | −3.1 ± 13.9 |
+| Heads-up against the original repository engine | −15.2 ± 31.1 | −21.7 ± 48.4 | +6.5 ± 55.9 |
+| Three-handed against two v1 seats | −6.1 ± 31.6 | −32.1 ± 26.0 | +26.0 ± 39.0 |
+
+No difference is significant. The two tables with a calling station lean toward the old engine; that was the reason for the later change to how measured fold rates are applied, and its effect has not been measured. Simulated opponents are programs, most of them built from the old engine's own opponent model.
+
+**Solver comparison: none.** No authorised solver output is available, so decision quality against solver play is unmeasured. The scenario suite checks properties instead: 97 of 97 hold for the new engine, 85 of 97 for the old (design set and held-out set; `reports/scenarios-2026-11-14.md`).
+
+**Open issue.** Heads-up, the new engine still prefers a small lead with bottom pair into a wide button range (bet +41.8, check +27.1 at 10/20), labelled "thin bet". A solver checks that hand. It follows from the modelled replies (button folds 30%, raises 10%; after a check it bets 60%). Without a reference it has been left as the model's output rather than overridden by a rule.
 
 ## Version 0.5.1: action buttons
 
@@ -58,7 +97,23 @@ Emergency stop: confirmed in code and by test to be independent of tracking and 
 - **Overlay**: Hero cards, position, pot, players remaining, current actor, recommendation or status, emergency stop. Drag by the header; minimise with the header button (the header then shows the recommendation); position is remembered.
 - Presentation logic is in `src/bot/ext/view.ts` (pure functions, tested on the recorded states).
 
-## Test results (2026-11-13)
+## Test results for 0.6.0 (2026-11-14)
+
+| Check | Command | Result |
+|---|---|---|
+| Bot suite | `npm run test:bot` | 257 of 257 pass (205 earlier, 52 new: 25 strategy regression, 22 library, 5 scenario). Run before three last edits (an explanation string, two unused names). |
+| Strategy files after those edits | `npx vitest run tests/bot/strategy-v2.test.ts tests/bot/library.test.ts tests/bot/scenarios.test.ts tests/bot/strategy-sim.test.ts` | 75 of 75 pass |
+| Old engine on the new regression tests | same tests, `engine: 'v1'` assertions | The tests assert the old behaviour directly: v1 recommends the lead in `c-12`, values a check at −1.6 in `c-4`, fails 12 of 97 scenario properties |
+| Baseline fidelity | `engine: 'v1'` against the 0.5.1 commit | identical at 39 of 39 recorded decision points |
+| Type check, build | `npm run build` | clean; `dist/` is 0.6.0 |
+| Lint | `npx eslint` | 0 errors (warnings only) |
+| Decision scenarios | `npm run bot:scenarios` | v2 97 of 97 properties, v1 85 of 97 ([report](reports/scenarios-2026-11-14.md)) |
+| **Full suite** | `npm test` | **Not completed.** Stopped by the system for low memory while running next to the benchmark. Not restarted. The 726 tests outside `tests/bot` cover code this change did not touch, but that is an inference, not a result. |
+| **Strategy benchmark** | `npm run bot:strategy-bench` | **Not completed** (same cause). Pilot figures above. |
+| Browser checks | `npm run bot:e2e:recommend` | **Not re-run** for 0.6.0. The extension builds; it has not been loaded in Chromium with the new engine. |
+| General benchmark | `npm run bot:bench` | Not re-run; `reports/bench-2026-11-13.md` describes the 0.5.1 engine. |
+
+## Test results for 0.5.1 (2026-11-13)
 
 | Check | Command | Result |
 |---|---|---|
@@ -84,14 +139,16 @@ One earlier synthetic test changed: scenario 21 now expects a highlight on a fol
 - At frame 64 PokerNow showed "Your Turn" with no action buttons readable for one frame; the tracker agrees on the actor but the controller waits for the buttons. Harmless there (Hero folded 70 ms later), worth watching.
 - The bundle's log mentions earlier hands on another table marked "reconstruction invalid"; their frames were not in the export, so they could not be examined.
 - A player who folds before the first frame of a hand is left out of the hand (same picture as sitting out). Blinds and order stay right; early-position labels can be off by one for that hand.
-- Strategy limits are unchanged (see LIMITATIONS.md).
+- Strategy: see "Version 0.6.0" above and `docs/bot/STRATEGY_AUDIT.md` section 6. In short: no solver reference, hand-set opponent frequencies, no measured gain, one open heads-up issue, thin preflop data.
 
 ## Next steps
 
+0. Finish the 0.6.0 verification on a machine with free memory, one at a time: `npm test`, then `npm run bot:e2e:recommend`, then `npm run bot:strategy-bench` (about an hour; `-- --quick` for a smoke run).
 1. Another recommend-only session with recording on: more hands, a different table size if possible, and export "Last 20 hands" afterwards. Put the bundle in `debug_bundles/`.
 2. Replay it; add it as a second fixture; fix whatever it shows.
 3. Site prompts, straddles, dead big blind once seen in a recording.
-4. Then the strategy items in LIMITATIONS.md.
+4. Strategy data: solver references for the scenario suite and preflop packs for the situations in `docs/bot/STRATEGY_LIBRARY.md` ("Missing data"). Import with `npm run bot:ranges -- import <file>`.
+5. After a session on 0.6.0: `npm run bot:decisions -- debug_bundles/<file> --recorded` and review every decision marked lower confidence.
 
 ## Version control
 
@@ -105,3 +162,4 @@ One earlier synthetic test changed: scenario 21 now expects a highlight on a fol
 - 2026-11-13: v0.4.0 (`af85cb5`): tracker rewrite around observed versus predicted actor, recorder, debug bundle, replay.
 - 2026-11-13: v0.5.0 (`4ffaf72`): first real debug bundle analysed; sitting-out seats, highlight lag and dead small blind fixed against it; dashboard and overlay redesigned.
 - 2026-11-13: v0.5.1: second real bundle; action buttons classified by label ("Bet 5" was read as "Call 5").
+- 2026-11-14: v0.6.0: strategy audit against recorded hands; postflop engine and opponent model replaced (two-round look-ahead, betting lead, range-aware strength); strategy library and importers; scenario suite. Full test suite and benchmark not completed (machine low on memory).

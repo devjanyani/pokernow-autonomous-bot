@@ -42,7 +42,7 @@ describe('preflop strategy across table sizes', () => {
     const h9 = mk(9);
     const co = h9.seats.find((s) => s.pos!.label === 'CO')!.seat;
     foldTo(h9, co);
-    expect(agent().decideSync(h9, co, c2('Ah Kd')).basis.join(' ')).toMatch(/precomputed-chart: 6-max CO-RFI/);
+    expect(agent().decideSync(h9, co, c2('Ah Kd')).basis.join(' ')).toMatch(/precomputed-chart: .*CO-RFI/);
 
     const hu = mk(2);
     const d = agent().decideSync(hu, 0, c2('9h 4h'));
@@ -55,7 +55,7 @@ describe('preflop strategy across table sizes', () => {
     act(h3, 'fold');
     const d3 = agent().decideSync(h3, 1, c2('9h 4h'));
     expect(d3.mode).toBe('heads-up-pot');
-    expect(d3.basis.join(' ')).toMatch(/6-max SB-RFI/);
+    expect(d3.basis.join(' ')).toMatch(/6-max chart, SB-RFI/);
   });
 
   it('opens tighter with more players behind', () => {
@@ -168,7 +168,7 @@ describe('postflop EV engine', () => {
     for (const c of d.candidates) { expect(Number.isFinite(c.ev!)).toBe(true); expect(c.evSe!).toBeGreaterThanOrEqual(0); }
     expect(d.candidates.reduce((a, c) => a + c.freq, 0)).toBeCloseTo(1, 9);
     expect(d.uncertainty.length).toBeGreaterThan(10);
-    expect(d.basis.join(' ')).toMatch(/computed: Monte Carlo EV/);
+    expect(d.basis.join(' ')).toMatch(/Monte Carlo EV/);
     expect(d.samples).toBe(800);
   });
 

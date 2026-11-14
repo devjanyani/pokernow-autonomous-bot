@@ -9,7 +9,9 @@ Every decision the agent returns carries its own `basis` lines tagged with one o
 | `learned` | derived from this opponent's observed statistics |
 | `heuristic` | a hand-set approximation; not solver output |
 
-Nothing in the bot is a game-theory-optimal solution, and nothing is described as one. The preflop charts are third-party or hand-encoded approximations; the postflop engine is a one-round look-ahead under a heuristic opponent model.
+Nothing in the bot is a game-theory-optimal solution, and nothing is described as one. The preflop charts are third-party or hand-encoded approximations; the postflop engine is a two-round look-ahead under a heuristic opponent model.
+
+**Version note (0.6.0).** The postflop engine and the opponent model were replaced after an audit against recorded hands. Sections 3 (postflop part) and 6 describe the old engine, kept as the benchmark baseline; **section 8 describes what runs now**. Audit: [STRATEGY_AUDIT.md](STRATEGY_AUDIT.md). Strategy data and import formats: [STRATEGY_LIBRARY.md](STRATEGY_LIBRARY.md).
 
 ## 1. How heads-up versus multiway is chosen
 
@@ -143,3 +145,76 @@ The loop returns a provisional decision after the first batch and stops when: th
 In autonomous mode a bounded random think time (settings, default 0.6 to 2.2 s) is added, never past the deadline. When the page shows no clock, the configured assumed clock (default 20 s) is used.
 
 Measured: a decision takes a few milliseconds even at 8,000 samples (see `reports/`), so in practice the stopping rule, not the clock, ends the computation.
+
+## 8. Version 2 (0.6.0): what replaced sections 3 and 6
+
+Sections 3 (postflop model) and 6 above describe **version 1**, the engine up to 0.5.1. It is still in the repository (`strategy/postflop-v1.ts`, `ranges/postflop-model.ts`, `engine: 'v1'`) as the benchmark baseline and is not used for live recommendations. The reasons it was replaced, with the recorded hands that show them, are in [STRATEGY_AUDIT.md](STRATEGY_AUDIT.md). This section describes what runs now.
+
+### 8.1 Spot analysis (`strategy/spot.ts`)
+
+Read from the reconstructed action sequence, so it reflects what Hero actually did, including actions taken against advice:
+
+- last preflop raiser, pot type (limped, single-raised, 3-bet, 4-bet or more);
+- **betting lead**: the last bettor or raiser of the street immediately before this one, if still in the hand. A street checked through passes no lead on;
+- Hero's position against the players left: in position, out of position, in between;
+- stack-to-pot ratio;
+- the name of a bet made now: continuation bet (Hero holds the lead), lead or donk bet (the player with the lead is still to act behind), probe bet (the lead was given up), delayed continuation bet, raise;
+- whether Hero's two cards are in the range the model gives Hero's own preflop line. If not, the decision is marked **out-of-distribution**.
+
+### 8.2 Ranges
+
+Preflop ranges for opponents come from the strategy library where a pack covers the line (open, isolation raise, call or 3-bet of an open, call or 4-bet of a 3-bet), otherwise from the percentile bands of section 3. See [STRATEGY_LIBRARY.md](STRATEGY_LIBRARY.md).
+
+The same is done for Hero's seat. The result is Hero's **perceived range**: what a player who took Hero's line holds. It is used only to model how opponents see Hero. Hero's own decision is always computed for the two cards actually held.
+
+### 8.3 Strength inside ranges (`ranges/range-model.ts`), heuristic weights on computed quantities
+
+For a player with range `R` facing opponents whose ranges mix to `M`, on a given board:
+
+```
+qOwn(hand) = share of R (by weight) with lower effective strength
+qOpp(hand) = share of M with lower effective strength
+s(hand)    = 0.35 · qOwn + 0.35 · qOpp + 0.30 · es        (es as in section 3)
+```
+
+For Hero's actual hand `s = 0.70 · qOpp + 0.30 · es`, because the hand need not be in Hero's perceived range.
+
+All thresholds apply to `s`. Between equal ranges they read as fractions of a range. When one range is stronger on a board, `qOpp` lifts all of its hands and lowers all of the other's: the stronger range bets more and folds less. That is how range advantage enters; no board type is hard-coded.
+
+Behaviour, per holding:
+
+- **Bet when able to bet first**: value part `σ((s − t_v)/0.05)` with `t_v = 1 − valueTop + 0.1·(x − 0.6) + 0.04·(opponents − 1)`, plus a bluff share of the rest, divided for extra opponents and scaled by the opponent's measured aggression.
+
+  | | flop | turn | river |
+  |---|---|---|---|
+  | value share, no lead | 28% | 27% | 27% |
+  | bluff share, no lead | 17% | 15% | 11% |
+  | value share, with the lead | 34% | 30% | 30% |
+  | bluff share, with the lead | 32% | 21% | 14% |
+
+  Into the lead (the previous aggressor still to act behind) the whole probability is multiplied by 0.3.
+- **Facing a bet of x pots**: continues above `0.22 + 0.32·√x` (+0.06 river, +0.10 facing a raise, +0.03 per extra opponent, −0.25 × stickiness); raises mostly above 0.90.
+- **Narrowing**: Bayes' rule with these probabilities, using the range as it stands before each action. A check never multiplies a holding by less than 0.2 (slow-plays). If less than 3% of a range survives a line, part of the starting range is mixed back and the decision is marked "poorly explained by the behaviour model".
+
+The frequencies were chosen so that two equal ranges reproduce the population priors of section 4 (continuation bet 55% flop and 45% turn, bet when checked to 40 / 38 / 35%, fold to a bet about 45%). `tests/bot/strategy-v2.test.ts` checks the flop figures on eight boards. They are round figures, not measurements and not solver output. Stickiness now applies a player's measured fold rate at face value (shrunk for small samples).
+
+### 8.4 Decision (`strategy/postflop.ts`), a calculated approximation
+
+Candidates are as in section 6. For each sampled deal and each candidate:
+
+1. **This street.** Opponents fold, call or raise by 8.3.
+2. **Hero's follow-up is a plan.** "Check then fold to a bet" and "check then call a bet" are valued separately over all deals; the better is the value of checking. Likewise "bet then fold to a raise" and "bet then call a raise". Consequence: `EV(check) ≥ 0` always.
+3. **Next street** (flop to turn, turn to river). The sampled card is dealt and one betting round is played by everyone left, Hero included: in action order the first player willing to bet (8.3, with the lead belonging to whoever bet last on this street) bets half the pot, the others fold or call. A player who continued against a bet on this street is re-read inside the top `1 − t` of its range. Hero's simulated play bets for value but almost never bluffs. Every line is valued twice, with Hero following the model against a bet on that street and with Hero giving up, and the better counts.
+4. **Showdown** with exact side pots. After a flop decision the river betting is still not simulated: the payout is multiplied by the turn realization factor of section 6. When no betting is possible (someone is all-in), no factor is applied, so an all-in call is exactly `equity × pot − price`.
+
+Every bet or raise is also valued against opponents who fold about ten points less (stickiness +0.4) and scored by the lower of the two values. Mixing and standard errors are as in section 6.
+
+The explanation reports, from the same simulation: bet type and purpose (value bet if Hero wins at least half the time against the hands that call; protection or thin value; thin bet; bluff or semi-bluff below one third), the share of deals in which everyone folds, someone calls, someone raises, Hero's showdown share against the callers, the plan, and how often an opponent bets after a check.
+
+**Lower confidence** is stated when: Hero's hand is out-of-distribution; the chosen bet wins under a third of the time when called (it rests on the modelled fold rate); or an opponent's line fits the model poorly.
+
+Known limits of this method: one more street, not the whole tree; one bet size for opponents and for every simulated later bet; no check-raise by Hero and no raise behind a call; hand-set frequencies; no solver reference. In pilot simulations it cost about four to six times the computation of version 1.
+
+### 8.5 Preflop
+
+Section 5 still describes the order of checks. Changes: chart lookups go through the library and cite the pack, its verification status and every departure from its assumptions; the big blind over limpers uses the chart's raising hands; the width of a raise Hero faces is the width of the range modelled for the raiser's actual line, not the first-in width of the raiser's seat.

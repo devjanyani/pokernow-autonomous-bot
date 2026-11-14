@@ -31,7 +31,9 @@ import { exploitNotes, PlayerProfile } from '../opponents/profile';
 import { multiwayEquity } from '../equity/equity';
 import { effectiveStack, HandState, legalActions, potTotal, seatOf } from '../table/engine';
 import { jamFraction, JAM_BEHIND_MULT, openFraction } from '../ranges/preflop-model';
-import { bandWeight, CLASS_BY_NAME, toWeighted } from '../ranges/range';
+import { bandWeight, CLASS_BY_NAME, rangeFraction, toWeighted } from '../ranges/range';
+import type { Mix as LibMix, SpotQuery, StrategyLibrary } from './library/library';
+import type { PreflopScenario as LibScenario } from './library/types';
 import { Candidate, EquitySummary } from './types';
 import { VillainModel } from './villains';
 
@@ -83,6 +85,8 @@ export function decidePreflop(
   profiles: Map<string, PlayerProfile>,
   rng: Rng,
   exploitWeight: number,
+  /** Strategy library (version 2). Omitted = the version 1 chart lookup, kept for the benchmark baseline. */
+  library?: StrategyLibrary,
 ): PreflopResult {
   const la = legalActions(h, heroSeat);
   if (!la) throw new Error('decidePreflop: Hero is not to act');
@@ -115,7 +119,30 @@ export function decidePreflop(
   const pot = potTotal(h);
   const lastRaiserSeat = lastRaiser !== null ? seatOf(h, lastRaiser) : null;
   const opener = firstRaiser !== null ? seatOf(h, firstRaiser) : null;
-  const openerF = opener ? openFraction(opener.pos!.behindPreflop, hu) * (villains.find((v) => v.seat === opener.seat)?.tend.preflopAggression ?? 1) : 0;
+  const openerModel = opener ? villains.find((v) => v.seat === opener.seat) : undefined;
+  // Width of the first raiser's range. Version 1 used the first-in width of the raiser's seat whatever had
+  // happened before the raise, so a big blind raising over limpers was read as a 42% "open". Version 2 uses
+  // the width of the range actually modelled for that player's line (open, isolation raise, ...).
+  const openerF = !opener ? 0
+    : library && openerModel ? clamp(rangeFraction(openerModel.range), 0.02, 0.95)
+      : openFraction(opener.pos!.behindPreflop, hu) * (openerModel?.tend.preflopAggression ?? 1);
+
+  // Library lookup for Hero's own decision. Returns the action mix for the actual holding, or null.
+  const lookup = (scenario: LibScenario, villainBehind?: number, extra: Partial<SpotQuery> = {}): LibMix | null => {
+    if (!library) return null;
+    const q: SpotQuery = { scenario, players: dealt.length, heroBehind: hero.pos!.behindPreflop, villainBehind, effStackBB: effectiveStack(h, heroSeat) / bb, anteBB: h.ante / bb, ...extra };
+    let m = library.find(q), nearest = '';
+    // An opener seated earlier than the earliest seat any pack covers: the earliest covered seat is the nearest description.
+    if (!m && villainBehind !== undefined && villainBehind > 5) { m = library.find({ ...q, villainBehind: 5 }); nearest = '; APPROXIMATION: the raiser sits earlier than the earliest seat in the data, nearest seat used'; }
+    if (!m) return null;
+    basis.push(`${m.basisTag}: ${library.cite(m)}${nearest}`);
+    return library.mixFor(m, heroCards);
+  };
+  const cellFor = (key: string, scenario: LibScenario, villainBehind?: number, extra: Partial<SpotQuery> = {}): Mix | null => {
+    if (library) return lookup(scenario, villainBehind, extra);
+    const c = chartCell(key, cls);
+    return c;
+  };
 
   const mix: Mix = { fold: 0, call: 0, raise: 0, allin: 0 };
   let raiseTo = la.minRaiseTo;
@@ -188,13 +215,15 @@ export function decidePreflop(
   else if (raises === 0) {
     const p6 = hero.pos!.chart6;
     if (toCall === 0) {
-      mix.raise = inTop(cls, 0.14); mix.call = 1 - mix.raise; raiseTo = (4 + limpers) * bb;
-      basis.push('heuristic: big blind isolates top 14% over limpers, otherwise checks');
+      const cell = library ? lookup('bb-vs-limp', undefined, { limpers }) : null;
+      mix.raise = cell ? cell.raise + cell.allin : inTop(cls, 0.14);
+      mix.call = 1 - mix.raise; raiseTo = (4 + limpers) * bb;
+      basis.push(cell ? 'the chart is read for its raising hands; every other hand checks its option' : 'heuristic: big blind isolates top 14% over limpers, otherwise checks');
     } else if (limpers === 0) {
-      const cell = p6 ? chartCell(`${p6}-RFI`, cls) : null;
+      const cell = library ? cellFor('', 'rfi') : p6 ? chartCell(`${p6}-RFI`, cls) : null;
       if (cell) {
         Object.assign(mix, cell);
-        basis.push(`precomputed-chart: 6-max ${p6}-RFI (seat ${hero.pos!.label}, ${hero.pos!.behindPreflop} behind)`);
+        if (!library) basis.push(`precomputed-chart: 6-max ${p6}-RFI (seat ${hero.pos!.label}, ${hero.pos!.behindPreflop} behind)`);
       } else {
         const f = openFraction(hero.pos!.behindPreflop, false);
         mix.raise = inTop(cls, f); mix.fold = 1 - mix.raise;
@@ -202,7 +231,7 @@ export function decidePreflop(
       }
       raiseTo = openSize();
     } else {
-      const cell = p6 ? chartCell(`${p6}-ISO`, cls) : null;
+      const cell = library ? cellFor('', 'vs-limp', undefined, { limpers }) : p6 ? chartCell(`${p6}-ISO`, cls) : null;
       const f = 0.6 * openFraction(hero.pos!.behindPreflop, false);
       mix.raise = cell ? cell.raise + cell.allin : inTop(cls, f);
       const late = hero.pos!.isButton || hero.pos!.label === 'CO' || hero.pos!.isSmallBlind;
@@ -210,16 +239,19 @@ export function decidePreflop(
       const overlimp = late && playable && pct < 0.45 ? 1 - mix.raise : 0;
       mix.call = overlimp; mix.fold = 1 - mix.raise - mix.call;
       raiseTo = (hero.pos!.isSmallBlind ? 4 : 3 + limpers) * bb + (hero.pos!.isSmallBlind ? limpers * bb : 0);
-      basis.push(cell ? `precomputed-chart: 6-max ${p6}-ISO over ${limpers} limper(s)` : `heuristic: isolate top ${(100 * f).toFixed(1)}% over ${limpers} limper(s)`);
+      if (!cell) basis.push(`heuristic: isolate top ${(100 * f).toFixed(1)}% over ${limpers} limper(s)`);
+      else if (!library) basis.push(`precomputed-chart: 6-max ${p6}-ISO over ${limpers} limper(s)`);
+      else basis.push(`the isolation chart is read for its raising hands only, with ${limpers} limper(s)`);
       if (overlimp > 0) basis.push('heuristic: over-limp pairs / suited hands in late position');
     }
   } else if (raises === 1 && heroRaiseLevel === 0) {
     const p6 = hero.pos!.chart6, o6 = opener!.pos!.chart6 ?? 'UTG';
-    const cell = p6 && callersAfterRaise === 0 ? chartCell(`${p6}-vs-open-${o6}`, cls) : null;
+    const cell = callersAfterRaise > 0 ? (library ? lookup('vs-open-call', opener!.pos!.behindPreflop, { callers: callersAfterRaise }) : null)
+      : library ? cellFor('', 'vs-open', opener!.pos!.behindPreflop) : p6 ? chartCell(`${p6}-vs-open-${o6}`, cls) : null;
     const ip = !hero.pos!.isSmallBlind && !hero.pos!.isBigBlind;
     if (cell) {
       Object.assign(mix, cell);
-      basis.push(`precomputed-chart: 6-max ${p6}-vs-open-${o6}${opener!.pos!.chart6 ? '' : ' (opener is earlier than 6-max UTG; nearest chart)'}`);
+      if (!library) basis.push(`precomputed-chart: 6-max ${p6}-vs-open-${o6}${opener!.pos!.chart6 ? '' : ' (opener is earlier than 6-max UTG; nearest chart)'}`);
     } else {
       const v = clamp(0.3 * openerF, 0.025, 0.12) * (callersAfterRaise ? 0.85 : 1);
       const callW = hero.pos!.isBigBlind ? clamp(1.1 * openerF + 0.1 + 0.05 * callersAfterRaise, 0.1, 0.7)
@@ -227,7 +259,7 @@ export function decidePreflop(
       mix.raise = inTop(cls, v);
       mix.call = Math.max(0, inTop(cls, v + callW) - mix.raise);
       mix.fold = 1 - mix.raise - mix.call;
-      basis.push(`heuristic: vs ${opener!.pos!.label} open (est. ${(100 * openerF).toFixed(0)}% range)${callersAfterRaise ? ` + ${callersAfterRaise} caller(s), squeeze sizing` : ''}: 3-bet top ${(100 * v).toFixed(1)}%, continue top ${(100 * (v + callW)).toFixed(0)}%`);
+      basis.push(`heuristic: vs ${opener!.pos!.label} ${library && limpers > 0 ? 'raise over limpers' : 'open'} (est. ${(100 * openerF).toFixed(0)}% range)${callersAfterRaise ? ` + ${callersAfterRaise} caller(s), squeeze sizing` : ''}: 3-bet top ${(100 * v).toFixed(1)}%, continue top ${(100 * (v + callW)).toFixed(0)}%`);
     }
     // Evidence-gated exploit: 3-bet light against a player who demonstrably over-folds to 3-bets.
     const note = exploitNotes(profiles.get(opener!.playerId)).find((n) => n.id === 'overfold-3bet');
@@ -239,10 +271,12 @@ export function decidePreflop(
     raiseTo = h.currentBet * ((ip ? 3 : 4) + callersAfterRaise);
   } else if (raises === 2) {
     const p6 = hero.pos!.chart6, r6 = lastRaiserSeat!.pos!.chart6;
-    const cell = heroRaiseLevel === 1 && p6 && r6 && callersAfterRaise === 0 ? chartCell(`${p6}-vs-3bet-${r6}`, cls) : null;
+    const cell = heroRaiseLevel !== 1 ? (library ? lookup('cold-4bet', lastRaiserSeat!.pos!.behindPreflop) : null)
+      : callersAfterRaise > 0 ? (library ? lookup('vs-squeeze', lastRaiserSeat!.pos!.behindPreflop, { callers: callersAfterRaise }) : null)
+        : library ? cellFor('', 'vs-3bet', lastRaiserSeat!.pos!.behindPreflop) : p6 && r6 ? chartCell(`${p6}-vs-3bet-${r6}`, cls) : null;
     if (cell) {
       Object.assign(mix, cell);
-      basis.push(`precomputed-chart: 6-max ${p6}-vs-3bet-${r6}`);
+      if (!library) basis.push(`precomputed-chart: 6-max ${p6}-vs-3bet-${r6}`);
     } else if (heroRaiseLevel === 1) {
       const own = openFraction(hero.pos!.behindPreflop, false);
       mix.raise = inTop(cls, 0.026);
@@ -257,10 +291,10 @@ export function decidePreflop(
     raiseTo = h.currentBet * (hero.pos!.isSmallBlind || hero.pos!.isBigBlind ? 2.7 : 2.3);
   } else {
     const p6 = hero.pos!.chart6, r6 = lastRaiserSeat?.pos?.chart6;
-    const cell = heroRaiseLevel >= 2 && p6 && r6 ? chartCell(`${p6}-vs-4bet-${r6}`, cls) : null;
+    const cell = heroRaiseLevel < 2 ? null : library ? (lastRaiserSeat ? cellFor('', 'vs-4bet', lastRaiserSeat.pos!.behindPreflop) : null) : p6 && r6 ? chartCell(`${p6}-vs-4bet-${r6}`, cls) : null;
     if (cell) {
       Object.assign(mix, cell);
-      basis.push(`precomputed-chart: 6-max ${p6}-vs-4bet-${r6}`);
+      if (!library) basis.push(`precomputed-chart: 6-max ${p6}-vs-4bet-${r6}`);
     } else {
       mix.allin = inTop(cls, 0.013); mix.fold = 1 - mix.allin;
       basis.push('heuristic: vs 4-bet or more without a chart: continue top 1.3% (all-in)');

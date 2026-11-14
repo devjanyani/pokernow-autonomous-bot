@@ -9,6 +9,13 @@
 //   loose-aggressive  /  ranges/postflop-model.ts with fixed tendencies
 //   range-equity      out-of-family benchmark: acts on Monte Carlo equity
 //                     versus random hands compared with fixed thresholds
+//   range-aware       plays the version 2 behaviour model directly: strength measured inside
+//                     its own range and against the others' ranges, bets most with the
+//                     betting lead and rarely into it (same family as the v2 bot's
+//                     opponent model, so results against it flatter v2 the way the four
+//                     archetypes flatter v1)
+//   deviating-*       wraps a bot and, like a user ignoring advice, calls a cheap preflop
+//                     bet half the time the bot says fold; postflop the bot decides
 //   bot               the BotAgent under test
 //
 // NOTE ON BIAS: the four archetypes are drawn from the same model family the
@@ -23,7 +30,10 @@ import { multiwayEquity } from '../equity/equity';
 import { betProb, responseProbs, Tendencies } from '../ranges/postflop-model';
 import { openFraction } from '../ranges/preflop-model';
 import { classPercentile, fullRange, toWeighted } from '../ranges/range';
-import { FeatureCache } from '../strategy/villains';
+import { buildTable, FeatureCache } from '../strategy/villains';
+import { betProb2, mixRanges, responseProbs2, strengthTable } from '../ranges/range-model';
+import { NEUTRAL } from '../ranges/postflop-model';
+import { betRole, leadSeatFor } from '../strategy/spot';
 import { ActionInput, potTotal, seatOf } from '../table/engine';
 import type { Decision } from '../strategy/types';
 import { Policy, PolicyView } from './table';
@@ -142,6 +152,56 @@ export function rangeEquityPolicy(samples = 250): Policy {
   };
 }
 
+/** Plays the version 2 range-aware behaviour model directly (preflop: the tight-aggressive archetype). */
+export function rangeAwarePolicy(tend: Tendencies = NEUTRAL, name = 'range-aware'): Policy {
+  const cache = new FeatureCache();
+  const pre = archetypePolicy('tight-aggressive');
+  const none = new Map<string, never>();
+  return {
+    name,
+    act(view) {
+      const { h, seat, hole, la, rng } = view;
+      if (h.street === 'preflop') return pre.act(view) as Choice;
+      const me = seatOf(h, seat);
+      const pot = potTotal(h);
+      const t = buildTable(h, seat, hole, none, 0, cache);
+      const f = cache.get(h.board);
+      const s = strengthTable(t.heroPerceived, mixRanges(t.villains.map((v) => v.range)), f)[comboIndex(hole[0], hole[1])];
+      const opponents = Math.max(1, t.villains.length);
+      const u = rng.next();
+      if (la.canCheck) {
+        const acted = new Set(h.events.filter((e) => e.street === h.street && !e.kind.startsWith('post')).map((e) => e.seat));
+        const role = betRole(h, seat, leadSeatFor(h, h.street), acted);
+        const frac = 0.33 + 0.67 * rng.next();
+        return u < betProb2(s, { street: h.street, betFrac: frac, opponents, isRaise: false, tend, role }) ? raiseOr(view, me.streetCommit + frac * pot, 'check') : { kind: 'check' };
+      }
+      const betFrac = la.callAmount / Math.max(1, pot - la.callAmount);
+      const r = responseProbs2(s, { street: h.street, betFrac, opponents, isRaise: h.raisesThisStreet >= 2, tend });
+      if (u < r.fold) return { kind: 'fold' };
+      if (u < r.fold + r.call) return passive(view);
+      return raiseOr(view, h.currentBet + 0.8 * (pot + la.callAmount), 'call');
+    },
+  };
+}
+
+/**
+ * A user who ignores preflop advice: when the wrapped bot says fold and calling costs at most `maxCallBB`
+ * big blinds, call instead with probability `rate`. Everything else is the bot's own decision, so the bot
+ * regularly finds itself after the flop with hands outside the range of its line.
+ */
+export function deviatingPolicy(inner: BotPolicy, rate = 0.5, maxCallBB = 5): Policy {
+  return {
+    name: `deviating-${inner.name}`,
+    act(view) {
+      const choice = inner.act(view) as Choice;
+      const { h, la, rng } = view;
+      if (h.street === 'preflop' && choice.kind === 'fold' && la.canCall && la.callAmount <= maxCallBB * h.bigBlind && rng.fork(991).next() < rate) return { kind: 'call' };
+      return choice;
+    },
+    observe: inner.observe,
+  };
+}
+
 export interface BotPolicy extends Policy { agent: BotAgent; decisions: Decision[]; keepDecisions: boolean }
 
 /** The bot under test. `samples` fixes the Monte Carlo budget so runs are reproducible. */
@@ -168,5 +228,6 @@ export const POLICY_FACTORIES: Record<string, () => Policy> = {
   'tight-aggressive': () => archetypePolicy('tight-aggressive'),
   'loose-aggressive': () => archetypePolicy('loose-aggressive'),
   'range-equity': () => rangeEquityPolicy(),
+  'range-aware': () => rangeAwarePolicy(),
   bot: () => botPolicy(),
 };

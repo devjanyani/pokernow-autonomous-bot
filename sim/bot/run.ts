@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { bb100, playSession, Policy } from '../../src/bot/sim/table';
-import { botPolicy, BotPolicy, POLICY_FACTORIES } from '../../src/bot/sim/policies';
+import { botPolicy, BotPolicy, deviatingPolicy, POLICY_FACTORIES } from '../../src/bot/sim/policies';
 import { cardsStr } from '../../src/bot/cards';
 import { legacyEnginePolicy } from './legacy-seat';
 
@@ -27,6 +27,10 @@ function arg(name: string, def?: string): string | undefined {
 
 export function makePolicy(spec: string, samples: number, seed: number): Policy {
   if (spec === 'bot') return botPolicy({ samples, seed });
+  if (spec === 'bot-v1') return botPolicy({ samples, seed, engine: 'v1', name: 'bot-v1' });
+  if (spec === 'bot-deviating') return deviatingPolicy(botPolicy({ samples, seed }));
+  if (spec === 'bot-v1-deviating') return deviatingPolicy(botPolicy({ samples, seed, engine: 'v1', name: 'bot-v1' }));
+  if (spec === 'bot-v1-noexploit') return botPolicy({ samples, seed, engine: 'v1', exploitWeight: 0, name: 'bot-v1-noexploit' });
   if (spec === 'bot-noexploit') return botPolicy({ samples, seed, exploitWeight: 0, name: 'bot-noexploit' });
   if (spec === 'legacy-engine') return legacyEnginePolicy();
   const f = POLICY_FACTORIES[spec];

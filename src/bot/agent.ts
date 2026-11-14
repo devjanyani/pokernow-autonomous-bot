@@ -14,9 +14,12 @@
 import { CardId, cardsAreDistinct, hashSeed, hashString, Rng } from './cards';
 import { applyHandToProfiles, PlayerProfile } from './opponents/profile';
 import { decidePreflop } from './strategy/preflop';
-import { PostflopSolver } from './strategy/postflop';
+import { PostflopSolver, PostflopResult } from './strategy/postflop';
+import { PostflopSolverV1 } from './strategy/postflop-v1';
+import { analyseSpot, describeSpot, SpotInfo } from './strategy/spot';
 import { Candidate, Decision } from './strategy/types';
-import { buildVillains, FeatureCache } from './strategy/villains';
+import { buildTable, FeatureCache } from './strategy/villains';
+import { defaultLibrary } from './strategy/library/builtin';
 import {
   ActionInput, effectiveStack, HandState, legalActions, potTotal, tableCounts, validateAction,
 } from './table/engine';
@@ -27,6 +30,11 @@ export interface AgentOptions {
   exploitWeight?: number;
   seed?: number;
   now?: () => number;
+  /**
+   * 'v2' (default): two-round look-ahead with betting-lead roles. 'v1': the engine as it was at
+   * version 0.5.1, kept only as the benchmark baseline.
+   */
+  engine?: 'v1' | 'v2';
 }
 
 export interface DecideOptions {
@@ -55,10 +63,12 @@ export class BotAgent {
   private readonly exploitWeight: number;
   private readonly seed: number;
   private readonly now: () => number;
+  private readonly engine: 'v1' | 'v2';
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
     this.seed = opts.seed ?? 1;
+    this.engine = opts.engine ?? 'v2';
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
@@ -73,18 +83,30 @@ export class BotAgent {
     if (!cardsAreDistinct([...heroCards, ...h.board])) throw new Error('hero cards collide with the board');
     const counts = tableCounts(h, heroSeat);
     const mode: Decision['mode'] = counts.headsUpTable ? 'heads-up-table' : counts.opponentsContesting <= 1 ? 'heads-up-pot' : 'multiway';
-    const villains = buildVillains(h, heroSeat, heroCards, this.profiles, this.exploitWeight, this.cache);
+    const legacy = this.engine === 'v1';
+    const { villains, heroPerceived } = buildTable(h, heroSeat, heroCards, this.profiles, this.exploitWeight, this.cache, legacy);
     const rng = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, heroSeat));
-    return { la, counts, mode, villains, rng };
+    const spot = analyseSpot(h, heroSeat, heroCards);
+    return { la, counts, mode, villains, heroPerceived, rng, spot, legacy };
   }
 
   private finish(
     h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, candidates: Candidate[], chosen: number,
-    extra: Pick<Decision, 'equity' | 'basis' | 'adjustments' | 'evGap' | 'evGapSe' | 'samples' | 'provisional'>, t0: number,
+    extra: Pick<Decision, 'equity' | 'basis' | 'adjustments' | 'evGap' | 'evGapSe' | 'samples' | 'provisional'> & { lowConfidence?: boolean }, t0: number,
   ): Decision {
     let pick = candidates[chosen];
     let input: ActionInput = { seat: heroSeat, kind: pick.action, to: pick.to };
     const basis = extra.basis.slice();
+    const spot: SpotInfo = prep.spot;
+    if (!prep.legacy) {
+      const nameOf = (seat: number) => h.seats.find((s) => s.seat === seat)?.name ?? `seat ${seat}`;
+      basis.unshift(`spot: ${describeSpot(spot, nameOf)}`);
+      if (spot.offRange) {
+        basis.push(h.street === 'preflop'
+          ? `out-of-distribution: Hero's hand is not in the range the model gives a player who took this preflop line (${spot.heroLine}); the advice below is for the hand actually held`
+          : `out-of-distribution: Hero's hand is not in the range the model gives this preflop line (${spot.heroLine}). No chart is looked up for it: the decision is an explicit range and equity calculation for the cards actually held. Opponents are modelled as if they did not know this, so treat it as lower confidence`);
+      }
+    }
     // Free-check rule, enforced in one place for every strategy branch and every street:
     // folding is never returned when checking costs nothing.
     if (pick.action === 'fold' && prep.la.canCheck) {
@@ -115,36 +137,75 @@ export class BotAgent {
       uncertainty += '. Standard errors cover sampling noise only; the opponent model is heuristic.';
     } else uncertainty = 'frequency-based decision (chart or percentile rule); no EV estimate.';
     if (prep.villains.every((v) => (this.profiles.get(v.playerId)?.hands ?? 0) < 20)) uncertainty += ' Opponent reads are weak (fewer than 20 hands each).';
+    const poor = prep.legacy ? [] : prep.villains.filter((v) => v.poorFit);
+    for (const v of poor) basis.push(`model-dependent: ${v.name}'s betting line is poorly explained by the behaviour model (${(100 * v.retained).toFixed(1)}% of the starting range fits it), so part of the starting range was kept`);
+    const lower = !prep.legacy && (spot.offRange || extra.lowConfidence === true || poor.length > 0);
+    if (lower) uncertainty += ' Lower confidence: see the notes marked out-of-distribution or model-dependent.';
     return {
       action: input.kind, to: input.to, label: pick.label, street: h.street, candidates,
       equity: extra.equity,
-      ranges: prep.villains.map((v) => ({ seat: v.seat, name: v.name, line: v.line, summary: v.summary, basis: 'heuristic' as const })),
+      ranges: prep.villains.map((v) => ({ seat: v.seat, name: v.name, line: v.line, summary: v.summary, basis: prep.legacy ? 'heuristic' as const : (v.rangeBasis === 'solver' ? 'precomputed-chart' as const : v.rangeBasis), source: prep.legacy ? undefined : `${v.rangeSource}; postflop actions narrowed by the heuristic behaviour model` })),
       adjustments, basis, uncertainty, evGap: extra.evGap, evGapSe: extra.evGapSe,
       counts: prep.counts, mode: prep.mode, samples: extra.samples, computeMs: this.now() - t0, provisional: extra.provisional,
+      ...(prep.legacy ? {} : { spot, confidence: lower ? 'lower' as const : 'normal' as const, engine: 'v2' as const }),
     };
   }
 
   private preflop(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>, t0: number): Decision {
-    const r = decidePreflop(h, heroSeat, heroCards, prep.villains, this.profiles, prep.rng, this.exploitWeight);
+    const r = decidePreflop(h, heroSeat, heroCards, prep.villains, this.profiles, prep.rng, this.exploitWeight, prep.legacy ? undefined : defaultLibrary());
     return this.finish(h, heroSeat, prep, r.candidates, r.chosen, {
       equity: r.equity, basis: r.basis, adjustments: r.adjustments, evGap: r.evGap, evGapSe: r.evGapSe,
       samples: r.equity?.samples ?? 0, provisional: false,
     }, t0);
   }
 
-  private postflopDecision(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, solver: PostflopSolver, provisional: boolean, t0: number): Decision {
+  private newSolver(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>): PostflopSolver | PostflopSolverV1 {
+    const seed = prep.rng.int(1 << 30);
+    return prep.legacy ? new PostflopSolverV1(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), seed)
+      : new PostflopSolver(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), seed, prep.heroPerceived);
+  }
+
+  private postflopDecision(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, solver: PostflopSolver | PostflopSolverV1, provisional: boolean, t0: number): Decision {
     const res = solver.result();
     // Sample the mix with a fixed draw so refinement does not flip-flop on the random number.
     let r = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, 7)).next();
     let chosen = res.best;
     for (let i = 0; i < res.candidates.length; i++) { r -= res.candidates[i].freq; if (r < 0) { chosen = i; break; } }
+    if (prep.legacy) {
+      return this.finish(h, heroSeat, prep, res.candidates, chosen, {
+        equity: res.equity,
+        basis: [
+          `computed: Monte Carlo EV of ${res.candidates.length} candidate actions over ${res.samples} joint deals vs ${prep.villains.length} opponent range(s)`,
+          'heuristic: opponent ranges and responses from ranges/postflop-model.ts; realization factor on flop/turn',
+        ],
+        adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional,
+      }, t0);
+    }
+    const r2 = res as PostflopResult;
+    const basis = [
+      `calculated approximation: Monte Carlo EV of ${res.candidates.length} candidate actions over ${res.samples} joint deals vs ${prep.villains.length} opponent range(s), this street and the next street's betting played out`,
+      "heuristic: opponent ranges, their responses and Hero's own play on the next street come from the range-aware behaviour model (ranges/range-model.ts), not from a solver",
+    ];
+    const pick = res.candidates[chosen], line = r2.lines[chosen];
+    const pct = (x: number) => `${(100 * x).toFixed(0)}%`;
+    let lowConfidence = false;
+    if (pick.action === 'bet' || pick.action === 'raise') {
+      const eqc = line.equityWhenCalled;
+      const purpose = eqc === null ? 'bluff (never called in the simulation)'
+        : eqc >= 0.5 ? 'value bet: ahead of the hands that call'
+          : res.equity.equity >= 1 / (prep.villains.length + 1) + 0.1 && eqc >= 0.35 ? 'protection / thin value bet: ahead of the ranges now, about even or behind when called'
+            : eqc < 0.33 ? 'bluff or semi-bluff: behind when called, profit comes from folds' : 'thin bet: marginal against the hands that call';
+      basis.push(`bet type: ${pick.action === 'raise' ? 'raise' : prep.spot.heroBetType}; purpose: ${purpose}`);
+      basis.push(`modelled responses: all fold ${pct(line.foldAll)}, call ${pct(line.called)}, raise ${pct(line.raised)}${eqc === null ? '' : `; Hero wins ${pct(eqc)} at showdown against the hands that call`}${line.plan ? `; plan: ${line.plan}` : ''}`);
+      if (eqc === null || eqc < 0.33) { lowConfidence = true; basis.push('model-dependent: this bet is profitable only if opponents fold as often as the heuristic model predicts'); }
+    } else if (pick.action === 'check') {
+      basis.push(prep.villains.some((v) => v.actsBehind && !v.allIn) ? `check: an opponent bets behind in ${pct(line.betBehind)} of deals${line.plan ? `; plan: ${line.plan}` : ''}` : 'check: nobody is left to bet behind Hero on this street');
+    } else if (pick.action === 'call') {
+      const price = prep.la.callAmount / Math.max(1, potTotal(h) + prep.la.callAmount);
+      basis.push(`call: needs ${pct(price)} of the pot, raw showdown equity ${pct(res.equity.equity)}${res.equity.equity < 0.5 && h.street === 'river' ? ' (bluff-catcher: behind the betting range on average, priced in by the pot odds)' : ''}`);
+    }
     return this.finish(h, heroSeat, prep, res.candidates, chosen, {
-      equity: res.equity,
-      basis: [
-        `computed: Monte Carlo EV of ${res.candidates.length} candidate actions over ${res.samples} joint deals vs ${prep.villains.length} opponent range(s)`,
-        'heuristic: opponent ranges and responses from ranges/postflop-model.ts; realization factor on flop/turn',
-      ],
-      adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional,
+      equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional, lowConfidence,
     }, t0);
   }
 
@@ -153,7 +214,7 @@ export class BotAgent {
     const t0 = this.now();
     const prep = this.prepare(h, heroSeat, heroCards);
     if (h.street === 'preflop') return this.preflop(h, heroSeat, heroCards, prep, t0);
-    const solver = new PostflopSolver(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), prep.rng.int(1 << 30));
+    const solver = this.newSolver(h, heroSeat, heroCards, prep);
     solver.run(samples);
     return this.postflopDecision(h, heroSeat, prep, solver, false, t0);
   }
@@ -172,7 +233,7 @@ export class BotAgent {
       opts.onProgress?.(d);
       return d;
     }
-    const solver = new PostflopSolver(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), prep.rng.int(1 << 30));
+    const solver = this.newSolver(h, heroSeat, heroCards, prep);
     const pot = potTotal(h);
     const budget = planBudget({
       timeRemainingMs: opts.timeRemainingMs ?? null, street: h.street, potBB: pot / h.bigBlind,

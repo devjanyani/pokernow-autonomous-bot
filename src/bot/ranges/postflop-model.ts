@@ -118,6 +118,33 @@ export interface Tendencies {
 }
 export const NEUTRAL: Tendencies = { aggression: 0, stickiness: 0, looseness: 1, preflopAggression: 1 };
 
+/**
+ * Who holds the betting lead when a player may bet first on a street.
+ *   'aggressor'       the actor made the last bet or raise on the previous street (a continuation bet)
+ *   'into-aggressor'  the previous street's aggressor is still to act behind the actor (a lead / donk bet)
+ *   'neutral'         nobody holds the lead: limped pot, the previous street was checked through,
+ *                     or the aggressor has already checked this street (probe / delayed bet)
+ */
+export type BetRole = 'aggressor' | 'into-aggressor' | 'neutral';
+
+/**
+ * HEURISTIC constants for the lead. They are round figures in line with commonly reported population
+ * tendencies (the preflop raiser bets most flops; players rarely lead into the raiser), not solver output.
+ */
+export const ROLE_MODEL = {
+  /** Continuation bet: value threshold lowered by this much and the bluff rate multiplied. */
+  cbetThresholdShift: -0.06,
+  cbetBluffMult: 1.7,
+  /** Share of would-be bets that are actually led into the aggressor; the rest are checked to the aggressor. */
+  leadShare: 0.3,
+  /**
+   * Smallest likelihood of a check for any holding when narrowing a range: strong hands are slow-played
+   * often enough that a check must never all but remove them. (Version 1 used 0.02, which let a
+   * check-check-bet line collapse a range to a few leftover combos.)
+   */
+  trapFloor: 0.2,
+};
+
 export interface SpotContext {
   street: Street;
   /** Bet size as a fraction of the pot before the bet (for check: ignored). */
@@ -127,6 +154,8 @@ export interface SpotContext {
   /** True when the action is a raise over a bet (or the bet being faced is a raise). */
   isRaise: boolean;
   tend: Tendencies;
+  /** Betting lead of the actor when it may bet first. Omitted = 'neutral' (the version 1 behaviour). */
+  role?: BetRole;
 }
 
 const sig = (x: number): number => 1 / (1 + Math.exp(-x));
@@ -137,11 +166,18 @@ const BLUFF_BASE: Record<Street, number> = { preflop: 0, flop: 0.3, turn: 0.2, r
 /** P(bets or raises | holding with effective strength es). */
 export function betProb(es: number, c: SpotContext): number {
   const x = clamp(c.betFrac, 0.1, 3);
-  const tv = 0.58 + 0.1 * Math.min(x, 1.5) + 0.04 * (c.opponents - 1) + (c.isRaise ? 0.17 : 0) + (c.street === 'river' ? 0.05 : 0);
+  const role = c.isRaise ? 'neutral' : c.role ?? 'neutral';
+  let tv = 0.58 + 0.1 * Math.min(x, 1.5) + 0.04 * (c.opponents - 1) + (c.isRaise ? 0.17 : 0) + (c.street === 'river' ? 0.05 : 0);
+  if (role === 'aggressor') tv += ROLE_MODEL.cbetThresholdShift;
   const value = sig((es - tv) / 0.06);
   let bluff = BLUFF_BASE[c.street] * (c.isRaise ? 0.3 : 1) / (1 + 0.6 * (c.opponents - 1));
+  if (role === 'aggressor') bluff *= ROLE_MODEL.cbetBluffMult;
   bluff *= clamp(1 + 0.8 * c.tend.aggression, 0.2, 2.2);
-  return clamp(value + (1 - value) * bluff, 0.01, 0.99);
+  bluff = Math.min(bluff, 0.85);
+  const p = value + (1 - value) * bluff;
+  // Leading into the previous street's aggressor is uncommon with every kind of holding: most of the
+  // hands that would bet check to the aggressor instead, so that check says little about the hand.
+  return clamp(role === 'into-aggressor' ? p * ROLE_MODEL.leadShare : p, 0.01, 0.99);
 }
 
 /** Strength threshold above which a holding mostly continues versus a bet of size x (pot fraction). */
@@ -183,6 +219,6 @@ export function actionLikelihood(kind: ObservedKind, es: number, c: SpotContext)
     case 'bet': return betProb(es, { ...c, isRaise: false });
     case 'raise': return Math.max(0.004, responseProbs(es, c).raise);
     case 'call': return Math.max(0.004, responseProbs(es, c).call);
-    case 'check': return Math.max(0.02, checkProb(es, c));
+    case 'check': return Math.max(c.role === undefined ? 0.02 : ROLE_MODEL.trapFloor, checkProb(es, c));
   }
 }

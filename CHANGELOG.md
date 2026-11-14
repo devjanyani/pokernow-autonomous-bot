@@ -2,6 +2,18 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.6.0 (2026-11-14)
+Strategy engine. Found by re-running the engine on recorded recommend-mode hands (kept, anonymised, as `tests/bot/fixtures/live-2026-11-13-hands.json`). Full account: `docs/bot/STRATEGY_AUDIT.md`. Tracking, button reading, legal-action checks and the interface are unchanged; autonomous mode remains off by default.
+- Fixed: a called bet was valued as a showdown with no further betting, so small bets with weak hands looked profitable (recorded: bottom pair led into the preflop raiser). The next street's betting is now played out.
+- Fixed: after a check Hero was made to call a bet by a fixed rule, which could value checking below folding (recorded: check −1.6). Follow-ups are now plans chosen on the average over all deals; a check is never worth less than zero.
+- Fixed: the engine ignored who raised before the flop. It now tracks the betting lead, names the bet (continuation bet, lead, probe, delayed continuation bet), and no longer treats a check to the raiser as proof of a weak hand.
+- Fixed: hand strength was measured against all possible hands. It is now measured inside the player's own range and against the other players' ranges, including the range the opponents can put Hero on (kept separate from Hero's actual cards).
+- Fixed: an unlikely line could collapse an opponent's range to a few leftover combos; an all-in call was discounted as if betting continued; a big blind's raise over limpers was read as a 42% open.
+- New: decisions with a hand outside the range of Hero's own line (for example after calling against advice) are labelled out-of-distribution and lower confidence. Bets that rest on the assumed fold rate are labelled model-dependent.
+- New: strategy library (`src/bot/strategy/library/`) with versioned packs, sources, assumptions, exact / approximation matching, and importers for JSON, a text range format and CSV (`npm run bot:ranges`). The two existing chart sets are wrapped as packs marked "source not verified". No solver data is shipped; the missing data is listed in `docs/bot/STRATEGY_LIBRARY.md`.
+- New: 36 decision scenarios with property checks (`npm run bot:scenarios`), a tool to re-run the engine on recorded hands (`npm run bot:decisions`), and a baseline-versus-current benchmark (`npm run bot:strategy-bench`). The 0.5.1 engine stays in the repository as `engine: 'v1'`.
+- Not measured: the full baseline-versus-current benchmark did not complete (the machine ran low on memory and the run was stopped). Pilot runs of 3,000 hands per table on an earlier parameter setting showed no significant difference in win rate between the two engines in simulation. No improvement in win rate is claimed. See `PROJECT_PROGRESS.md`.
+
 ## v0.5.1 (2026-11-13)
 Found in a second real recording (kept as `tests/bot/fixtures/live-2026-11-13b.json`).
 - Fixed: when a check is free PokerNow shows `[Bet 5] [Bet] [Check] [Fold]`, and draws the "Bet 5" shortcut with the same CSS class as the Call button. The adapter picked the call button by class and read its trailing number, so it reported "Call 5" and every free-check decision after the flop was blocked ("call button shows 5, engine computes 0"). Buttons are now classified by their label text (`src/bot/adapter/pokernow/controls.ts`): fold, check, call, bet, raise, all-in, size shortcuts, pre-actions, with visibility and enabled state.

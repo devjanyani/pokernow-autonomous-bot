@@ -1,4 +1,5 @@
 import type { ActionKind, Street, TableCounts } from '../table/engine';
+import type { SpotInfo } from './spot';
 
 /** How a number or choice was obtained. Shown in every decision explanation. */
 export type Basis =
@@ -22,7 +23,7 @@ export interface Candidate {
 
 export interface EquitySummary { equity: number; win: number; tie: number; stdErr: number; samples: number; opponents: number }
 
-export interface RangeNote { seat: number; name: string; line: string; summary: string; basis: Basis }
+export interface RangeNote { seat: number; name: string; line: string; summary: string; basis: Basis; /** Pack and spot (or rule) the preflop range came from. */ source?: string }
 
 export interface Decision {
   action: ActionKind;
@@ -48,4 +49,9 @@ export interface Decision {
   computeMs: number;
   /** True when a refinement pass could still change the answer. */
   provisional: boolean;
+  /** Who raised before the flop, who holds the betting lead, Hero's position, bet type (version 2 engine). */
+  spot?: SpotInfo;
+  /** 'lower' when the decision is out-of-distribution or rests mainly on the heuristic fold model. */
+  confidence?: 'normal' | 'lower';
+  engine?: 'v2';
 }
