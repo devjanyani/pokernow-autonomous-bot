@@ -28,7 +28,7 @@
 
 import { PlayerProfile, sanitizeProfile } from '../opponents/profile';
 import type { DebugFrame } from '../diag/recorder';
-import { DecisionRecord, DiagnosticRecord, HandRecord } from './records';
+import { DecisionRecord, DiagnosticRecord, HandRecord, StackCheck } from './records';
 
 export const DB_NAME = 'poker-bot';
 export const DB_VERSION = 3;
@@ -198,6 +198,17 @@ export class BotStorage {
       if (realTable(hand.tableId)) await this.touchTable(tx, hand.tableId, hand.ts);
       return true;
     }).then(async (wrote) => { if (wrote) await this.prune('hands', CAPS.hands); return wrote; });
+  }
+
+  /** Attach the next-hand stack check to a stored hand. Returns false when the hand is not stored (e.g. it was deleted). */
+  async applyHandCheck(handId: string, check: StackCheck): Promise<boolean> {
+    return this.tx(['hands'], 'readwrite', async (tx) => {
+      const s = tx.objectStore('hands');
+      const h = await get(s.get(handId) as IDBRequest<HandRecord | undefined>);
+      if (!h) return false;
+      s.put({ ...h, stackCheck: check });
+      return true;
+    });
   }
 
   private async touchTable(tx: IDBTransaction, tableId: string, ts: number): Promise<void> {

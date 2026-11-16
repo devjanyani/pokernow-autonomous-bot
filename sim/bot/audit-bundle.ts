@@ -13,8 +13,8 @@ import { TableObs } from '../../src/bot/adapter/observation';
 import { HandTracker } from '../../src/bot/adapter/tracker';
 import { parseBundle } from '../../src/bot/diag/recorder';
 import type { DecisionRecord, HandRecord } from '../../src/bot/ext/records';
-import { toHandRecord } from '../../src/bot/ext/records';
-import { chipImbalance, handStatus, heroCommitted } from '../../src/bot/ext/viewmodel';
+import { toHandRecord, toStackCheck } from '../../src/bot/ext/records';
+import { chipImbalance, handStatus, heroCommitted, heroResult } from '../../src/bot/ext/viewmodel';
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--hand');
@@ -32,7 +32,21 @@ tables.forEach((t, i) => alias.set(t, `T${i + 1}`));
 let np = 0;
 for (const f of frames) for (const s of f.obs.seats) if (s.name && !alias.has(s.name)) alias.set(s.name, s.isHero ? 'Hero' : `P${++np}`);
 const keys = [...alias.keys()].sort((a, b) => b.length - a.length);
-const anon = (s: string): string => { if (args.includes('--names')) return s; let o = s; for (const k of keys) if (k.length > 1 && o.includes(k)) o = o.split(k).join(alias.get(k) as string); return o; };
+const WORD = /[A-Za-z0-9_]/;
+/** Replace names and table ids by their placeholders, whole words only (a player called "ch" must not rewrite "check"). */
+function anon(s: string): string {
+  if (process.argv.includes('--names')) return s;
+  let o = s;
+  for (const k of keys) {
+    let from = 0;
+    for (let i = o.indexOf(k, from); i >= 0; i = o.indexOf(k, from)) {
+      const whole = !WORD.test(o[i - 1] ?? ' ') && !WORD.test(o[i + k.length] ?? ' ');
+      const to = alias.get(k) as string;
+      if (whole) { o = o.slice(0, i) + to + o.slice(i + k.length); from = i + to.length; } else from = i + k.length;
+    }
+  }
+  return o;
+}
 const hid = (id: string | null) => (id ? anon(id).replace(/:[\d.]+$/, '') : 'none');
 const stem = (id: string) => id.split(':').slice(0, 3).join(':');
 
@@ -52,6 +66,7 @@ for (const s of sessions) {
   let firstInvalid: { n: number; issue: string } | null = null, curId: string | null = null, why: string | null = null;
   for (const f of fs2) {
     const done = tr.ingest(f.obs as TableObs);
+    for (const k of tr.takeResultChecks()) { const key = liveKeys.get(stem(k.handId)) ?? k.handId; const r = replayed.get(key); if (r) r.rec.stackCheck = toStackCheck(k); }
     for (const c of done) replayed.set(liveKeys.get(stem(c.hand.handId)) ?? c.hand.handId, { rec: toHandRecord(c, f.obs.tableId, f.wall), firstInvalid: c.valid ? null : firstInvalid, session: s, why: c.valid ? null : why ?? (c.meta?.some((m) => m.uncertain) ? `an unconfirmed deduction (${c.meta.find((m) => m.uncertain)?.source})` : c.observedToEnd ? null : 'ending not observed') });
     const st = tr.state;
     const id = st.hand?.handId ?? null;
@@ -95,10 +110,14 @@ const cat = (r: HandRecord) => handStatus(r).kind;
 const count = (rs: HandRecord[]) => { const o: Record<string, number> = {}; for (const r of rs) o[cat(r)] = (o[cat(r)] ?? 0) + 1; return o; };
 console.log(`\nStored summaries by status: ${JSON.stringify(count(records))}`);
 console.log(`Same recording rebuilt by the current code: ${JSON.stringify(count([...replayed.values()].map((v) => v.rec)))} (${replayed.size} hands completed in replay)`);
-const sumBB = (rs: HandRecord[], pred: (r: HandRecord) => boolean) => rs.filter((r) => pred(r) && r.heroNet !== null).reduce((a, r) => a + (r.heroNet as number) / r.bigBlind, 0);
+const sumBB = (rs: HandRecord[], pred: (r: HandRecord) => boolean) => rs.filter((r) => pred(r) && r.heroNet !== null).reduce((a, r) => a + (heroResult(r) as number) / r.bigBlind, 0);
 const nBB = (rs: HandRecord[], pred: (r: HandRecord) => boolean) => rs.filter((r) => pred(r) && r.heroNet !== null).length;
 console.log(`Hero result, stored: valid hands ${sumBB(records, (r) => r.valid).toFixed(1)} bb over ${nBB(records, (r) => r.valid)}; verified (valid and chips add up) ${sumBB(records, (r) => cat(r) === 'verified').toFixed(1)} bb over ${nBB(records, (r) => cat(r) === 'verified')}; every hand with a number ${sumBB(records, () => true).toFixed(1)} bb over ${nBB(records, () => true)}.`);
 const now = [...replayed.values()].map((v) => v.rec);
+const checks: Record<string, number> = {};
+for (const r of now) { const k = r.stackCheck?.status ?? 'no following hand seen'; checks[k] = (checks[k] ?? 0) + 1; }
+console.log(`Next-hand stack check of the rebuilt hands: ${JSON.stringify(checks)}`);
+for (const [k, v] of replayed) if (v.rec.stackCheck && ['awarded-differently', 'unexplained'].includes(v.rec.stackCheck.status)) console.log(`  ${hid(k)}: ${v.rec.stackCheck.status}: ${anon(v.rec.stackCheck.note)}`);
 console.log(`Hero result, rebuilt now: verified ${sumBB(now, (r) => cat(r) === 'verified').toFixed(1)} bb over ${nBB(now, (r) => cat(r) === 'verified')}.`);
 
 const reasons: Record<string, number> = {};
@@ -118,22 +137,66 @@ for (const r of records.sort((a, b) => a.ts - b.ts)) {
   const interesting = args.includes('--all') || cat(r) !== 'verified' || (v && cat(v.rec) !== 'verified') || (r.heroNet !== null && Math.abs(r.heroNet / r.bigBlind) >= 80) || !v;
   if (only ? !r.handId.includes(only) : !interesting) continue;
   const bb = (x: number | null) => (x === null ? '–' : (x / r.bigBlind).toFixed(1));
-  console.log(`| ${hid(r.handId)} | ${cat(r)} | ${bb(r.heroNet)} | ${bb(heroCommitted(r))} | ${chipImbalance(r) ?? '–'} | ${v ? cat(v.rec) : 'not completed in replay'} | ${v ? bb(v.rec.heroNet) : '–'} | ${v?.firstInvalid ? `frame ${v.firstInvalid.n}: ${anon(v.firstInvalid.issue).slice(0, 150)}` : anon(v?.why ?? '')} |`);
+  console.log(`| ${hid(r.handId)} | ${cat(r)} | ${bb(r.heroNet)} | ${bb(heroCommitted(r))} | ${chipImbalance(r) ?? '–'} | ${v ? cat(v.rec) : 'not completed in replay'} | ${v ? bb(heroResult(v.rec)) : '–'} | ${v?.firstInvalid ? `frame ${v.firstInvalid.n}: ${anon(v.firstInvalid.issue).slice(0, 150)}` : anon(v?.why ?? '')} |`);
 }
+// Independent check of the results: Hero's stack at the end of each rebuilt hand against the stack the table
+// shows when the next hand of the same session starts. A difference is a top-up or re-buy between hands, or an error.
+console.log('');
+console.log('Hero stack continuity (rebuilt hand end -> next hand start, same session):');
+let links = 0, same = 0;
+const jumps: string[] = [];
+for (const s of sessions) {
+  const hs = [...replayed.entries()].filter(([, v]) => v.session === s).map(([k, v]) => ({ k, r: v.rec })).sort((x, y) => x.r.ts - y.r.ts);
+  for (let i = 0; i + 1 < hs.length; i++) {
+    const a = hs[i].r, b = hs[i + 1].r;
+    const ea = a.seats.find((x) => x.seat === a.heroSeat), sb = b.seats.find((x) => x.seat === b.heroSeat);
+    if (!ea || !sb || a.heroNet === null) continue;
+    links++;
+    const d = Math.round((sb.startStack - (ea.startStack + (heroResult(a) as number))) * 100) / 100;
+    if (Math.abs(d) <= 0.011) same++; else jumps.push(`${hid(hs[i].k)} -> ${hid(hs[i + 1].k)}: ${d > 0 ? '+' : ''}${d} chips (${cat(a)})`);
+  }
+}
+console.log(`  ${same} of ${links} consecutive pairs agree exactly.${jumps.length ? ' Differences:' : ''}`);
+for (const j of jumps) console.log(`  ${j}`);
+
 const unrecorded = [...new Set(frames.map((f) => f.handKey).filter((k): k is string => !!k))].filter((k) => !records.some((r) => r.handId === k));
 console.log(`\nRecorded hands with frames but no stored summary: ${unrecorded.length}${unrecorded.length ? ` (${unrecorded.slice(0, 40).map(hid).join(', ')})` : ''}`);
 
-// Hero decision points as recorded live.
-let turns = 0, ready = 0, blocked = 0;
-const why: Record<string, number> = {};
-const seen = new Set<string>();
-const once = (k: string) => { if (seen.has(k)) return false; seen.add(k); return true; };
-for (const f of frames) {
-  if (!f.obs.heroToAct || !f.tracker.settled) continue;
-  const k = `${f.handKey}|${f.tracker.eventCount}`;
-  if (once(`t${k}`)) turns++;
-  if (f.decision.state === 'ready' || f.decision.state === 'thinking') { if (once(`r${k}`)) ready++; }
-  else if (f.decision.state === 'blocked' && once(`b${k}`)) { blocked++; const w = anon(f.decision.reason ?? '?').replace(/\d+(\.\d+)?/g, 'N').slice(0, 110); why[w] = (why[w] ?? 0) + 1; }
+// Reasons a result could not be cross-checked.
+const un: Record<string, number> = {};
+for (const v of replayed.values()) if (v.rec.stackCheck?.status === 'unavailable') { const k = anon(v.rec.stackCheck.note).replace(/\d+/g, 'N'); un[k] = (un[k] ?? 0) + 1; }
+if (Object.keys(un).length) { console.log('\nWhy a result could not be cross-checked with the next hand:'); for (const [k, n] of Object.entries(un)) console.log(`  ${n} x ${k}`); }
+
+// Frames in which the page showed no chip amounts at all.
+const blind = frames.filter((f) => f.obs.pot === null && f.obs.seats.length > 0 && f.obs.seats.every((x) => x.stack === null));
+console.log(`\nFrames with no readable chip amounts (pot and every stack unreadable): ${blind.length} of ${frames.length}${blind.length ? `, in ${new Set(blind.map((f) => f.session)).size} session(s)` : ''}.`);
+
+// Hero's decisions in the stored summaries against the stored recommendations.
+let heroActs = 0, withRec = 0, followed = 0, executed = 0;
+const missingWhy: Record<string, number> = {};
+const differs: string[] = [];
+for (const r of records) {
+  for (const e of r.events) {
+    if (e.seat !== r.heroSeat || e.kind.startsWith('post')) continue;
+    if (e.inferred) continue; // not an action Hero was seen to take
+    heroActs++;
+    const ds = decisions.filter((d) => d.handId === r.handId && d.eventCount === e.seq).sort((x, y) => x.ts - y.ts);
+    const d = ds[ds.length - 1];
+    if (!d) {
+      // What the recorder showed at that decision point.
+      const fr = frames.filter((f) => f.handKey === r.handId && f.tracker.eventCount === e.seq && f.obs.heroToAct);
+      const st = fr.find((f) => f.decision.state === 'blocked') ?? fr[fr.length - 1];
+      const k = !fr.length ? 'Hero\'s turn was never recorded at that point (acted between two reads)' : st.decision.state === 'blocked' ? `blocked: ${anon(st.decision.reason ?? '?').replace(/\d+(\.\d+)?/g, 'N').slice(0, 90)}` : `state "${st.decision.state}" (${anon(st.decision.reason ?? 'no reason').replace(/\d+(\.\d+)?/g, 'N').slice(0, 70)})`;
+      const kk = `${hid(r.handId)} ${e.street}: ${k}`;
+      missingWhy[kk] = (missingWhy[kk] ?? 0) + 1;
+      continue;
+    }
+    withRec++;
+    if (d.execution) executed++;
+    const same = d.decision.action === e.kind && (!(e.kind === 'bet' || e.kind === 'raise') || Math.abs((d.decision.to ?? e.to) - e.to) < 0.011);
+    if (same) followed++; else differs.push(`${hid(r.handId)} ${e.street}: recommended ${d.decision.label}, played ${e.kind}${e.kind === 'bet' || e.kind === 'raise' ? ` to ${e.to}` : e.amount ? ` ${e.amount}` : ''}${d.execution ? ` [executor: ${d.execution.status}]` : ' [shown only]'}`);
+  }
 }
-console.log(`\nHero decision points shown by the table (settled frames): ${turns}; with a recommendation ${ready}; blocked ${blocked}.`);
-for (const [k, n] of Object.entries(why).sort((a, b) => b[1] - a[1])) console.log(`  ${n} x ${k}`);
+console.log(`\nHero actions in the stored summaries: ${heroActs}; with a stored recommendation ${withRec} (${executed} of them carried out by the executor); played as recommended ${followed}; played differently ${differs.length}; no recommendation stored ${heroActs - withRec}.`);
+for (const [k, n] of Object.entries(missingWhy).sort((x, y) => y[1] - x[1])) console.log(`  no recommendation, ${n} x ${k}`);
+for (const d of differs) console.log(`  differs: ${d}`);

@@ -133,6 +133,15 @@ export function chipImbalance(h: HandRecord): number | null {
   return Math.round(seats.reduce((a, s) => a + (s.endStack - s.startStack), 0) * 100) / 100;
 }
 
+/**
+ * Hero's result in chips. Normally the result settled from the cards shown; when the stacks at the start of the
+ * next hand show that the pot was shared differently (board run twice), the table's result.
+ */
+export function heroResult(h: HandRecord): number | null {
+  if (h.heroNet === null) return null;
+  return h.stackCheck?.status === 'awarded-differently' && h.stackCheck.heroDiff !== null ? Math.round((h.heroNet + h.stackCheck.heroDiff) * 100) / 100 : h.heroNet;
+}
+
 /** Everything about a stored hand that the reader should be warned about. Never empty for an unverified hand. */
 export function handWarnings(h: HandRecord): string[] {
   const w: string[] = [];
@@ -146,15 +155,21 @@ export function handWarnings(h: HandRecord): string[] {
   const put = heroCommitted(h);
   if (h.heroNet !== null && put !== null && h.heroNet < -put - 0.011) w.push(`Hero's stack fell by ${-h.heroNet} but the recorded actions put only ${put} into the pot: the stack change is not explained by the betting.`);
   if (h.heroSeat !== null && !h.heroCards) w.push('Hero\'s cards were not read.');
+  if (h.stackCheck?.status === 'awarded-differently') w.push(`Result taken from the table, not from the cards shown: ${h.stackCheck.note}.`);
+  if (h.stackCheck?.status === 'unexplained') w.push(`Result not confirmed: ${h.stackCheck.note}.`);
   return w;
 }
 
 export function handStatus(h: HandRecord): HandStatus {
   if (!h.observedToEnd) return { kind: 'ending-not-observed', label: 'Ending not observed', tone: 'warn', detail: 'No result is known for this hand.' };
   if (!h.valid) return { kind: 'invalid', label: 'Reconstruction invalid', tone: 'bad', detail: 'Failed a consistency check; the result is not trusted.' };
+  if (h.stackCheck?.status === 'unexplained') return { kind: 'unverified', label: 'Result unverified', tone: 'warn', detail: 'The stacks at the start of the next hand do not match the settled result.' };
   const imb = chipImbalance(h), put = heroCommitted(h);
   if ((imb !== null && Math.abs(imb) > 0.011) || (h.heroNet !== null && put !== null && h.heroNet < -put - 0.011)) return { kind: 'unverified', label: 'Result unverified', tone: 'warn', detail: 'The stack changes are not explained by the recorded betting.' };
-  return { kind: 'verified', label: 'Verified', tone: 'good', detail: 'Actions, pot and stacks agree.' };
+  const c = h.stackCheck?.status;
+  if (c === 'awarded-differently') return { kind: 'verified', label: 'Verified by stacks', tone: 'good', detail: 'The pot was shared differently from the cards shown (for example the board was run twice); the result is the one the table paid.' };
+  if (c === 'confirmed' || c === 'top-up') return { kind: 'verified', label: 'Verified', tone: 'good', detail: 'Actions, pot and stacks agree, and the next hand started with exactly the settled stacks.' };
+  return { kind: 'verified', label: 'Verified', tone: 'good', detail: 'Actions, pot and stacks agree. Not cross-checked against a following hand.' };
 }
 
 export interface HandRow {
@@ -170,7 +185,7 @@ export function handRow(h: HandRecord, nicknames: ReadonlyMap<string, string>): 
   const last = h.events[h.events.length - 1];
   return {
     h, id: h.handId, number: handNumber(h.handId), ts: h.ts, tableId: h.tableId, table: tableLabel(h.tableId, nicknames), players: h.seats.filter((s) => s.dealtIn).length,
-    status, warnings: handWarnings(h).length, netBB: h.heroNet !== null && h.bigBlind > 0 ? h.heroNet / h.bigBlind : null, verified: status.kind === 'verified' && h.heroNet !== null,
+    status, warnings: handWarnings(h).length, netBB: h.heroNet !== null && h.bigBlind > 0 ? (heroResult(h) as number) / h.bigBlind : null, verified: status.kind === 'verified' && h.heroNet !== null,
     heroPosition: hero?.position ?? null, street: h.board.length >= 5 ? 'river' : h.board.length === 4 ? 'turn' : h.board.length === 3 ? 'flop' : last?.street ?? 'preflop', showdown: h.wentToShowdown,
   };
 }

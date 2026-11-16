@@ -8,7 +8,7 @@
 // content script on a PokerNow tab, and are structurally validated.
 // ============================================================
 
-import { parseBotMessage, DEFAULT_SETTINGS, sanitizeSettings } from './records';
+import { parseBotMessage, DEFAULT_SETTINGS, sanitizeSettings, toStackCheck } from './records';
 import { BotStorage } from './storage';
 
 const storage = new BotStorage();
@@ -33,6 +33,8 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
         return { ok: true };
       case 'bot/hand':
         return { ok: true, stored: await storage.saveHand(msg.hand, msg.profiles) };
+      case 'bot/handCheck':
+        return { ok: true, stored: await storage.applyHandCheck(msg.check.handId, toStackCheck(msg.check)) };
       case 'bot/decision':
         await storage.saveDecision(msg.record);
         return { ok: true };

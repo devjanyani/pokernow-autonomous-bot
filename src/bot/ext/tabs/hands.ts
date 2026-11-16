@@ -4,7 +4,7 @@ import type { HandRecord } from '../records';
 import { button, cardRow, check, checkAll, confirmDialog, download, el, empty, nextSort, pager, playingCard, searchBox, select, sortHeader, stamp, tag, toast } from '../ui/dom';
 import type { Ctx } from '../ui/context';
 import { chips } from '../view';
-import { filterHands, HandFilter, handDetail, HandRow, handRow, handTotals, NO_HAND_FILTER, paginate, pct, shortId, sortRows, SortDir, tableLabel } from '../viewmodel';
+import { filterHands, HandFilter, handDetail, HandRow, handRow, handTotals, heroResult, NO_HAND_FILTER, paginate, pct, shortId, sortRows, SortDir, tableLabel } from '../viewmodel';
 
 type SortKey = 'ts' | 'table' | 'players' | 'net' | 'status';
 const state = { filter: { ...NO_HAND_FILTER } as HandFilter, sort: { key: 'ts' as SortKey, dir: 'desc' as SortDir }, page: 1, size: 25, selected: new Set<string>(), current: null as string | null };
@@ -31,7 +31,7 @@ async function detailPanel(h: HandRecord, ctx: Ctx, rerender: () => void): Promi
   const result = row.netBB === null ? el('div', { class: 'resultbox muted' }, 'No result known')
     : el('div', { class: `resultbox ${row.verified ? (row.netBB > 0 ? 'good' : row.netBB < 0 ? 'bad' : '') : 'muted'}` },
       el('div', { class: 'label' }, row.verified ? 'Hero result (verified)' : 'Hero stack change (NOT verified)'),
-      el('div', { class: 'resultnum' }, `${signed(h.heroNet as number, 2).replace(/\.00$/, '')} chips · ${signed(row.netBB)} bb`));
+      el('div', { class: 'resultnum' }, `${signed(heroResult(h) as number, 2).replace(/\.00$/, '')} chips · ${signed(row.netBB)} bb`));
   const warn = d.warnings.length ? el('div', { class: 'warnbox', id: 'hand-warnings' }, el('div', { class: 'label' }, 'Reconstruction warnings'), el('ul', {}, ...d.warnings.map((w) => el('li', {}, w)))) : null;
 
   const pt = el('table', { class: 'compact' }, el('thead', {}, el('tr', {}, el('th', {}, 'Pos'), el('th', {}, 'Player'), el('th', { class: 'num' }, 'Start'), el('th', { class: 'num' }, 'End'), el('th', { class: 'num' }, 'Change'), el('th', {}, 'Cards'))));

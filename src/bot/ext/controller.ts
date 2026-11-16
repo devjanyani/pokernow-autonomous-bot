@@ -119,6 +119,11 @@ export class LiveController {
   }
 
   private handleCompleted(tableId: string): void {
+    // Results of earlier hands checked against the stacks the next hand started with.
+    for (const check of this.tracker.takeResultChecks()) {
+      this.deps.send({ type: 'bot/handCheck', check });
+      if (check.status === 'awarded-differently' || check.status === 'unexplained') this.diag('warn', `hand ${check.handId}: ${check.note}`);
+    }
     for (const c of this.pendingCompleted.splice(0)) {
       let profiles: PlayerProfile[] = [];
       if (c.valid) {

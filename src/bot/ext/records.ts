@@ -5,7 +5,7 @@
 // ============================================================
 
 import { cardStr } from '../cards';
-import type { CompletedHand } from '../adapter/tracker';
+import type { CompletedHand, ResultCheck } from '../adapter/tracker';
 import type { Decision } from '../strategy/types';
 import type { PlayerProfile } from '../opponents/profile';
 import type { DebugFrame } from '../diag/recorder';
@@ -113,7 +113,15 @@ export interface HandRecord {
   wentToShowdown: boolean;
   valid: boolean;
   observedToEnd: boolean;
+  /**
+   * The settled stacks compared with the stacks at the start of the next hand (0.7.0 on; absent on older records and
+   * when no next hand was seen). `heroNet` is always the result settled from the cards shown; when the status is
+   * 'awarded-differently' the table's result is heroNet + heroDiff.
+   */
+  stackCheck?: StackCheck;
 }
+export type StackCheck = Pick<ResultCheck, 'status' | 'heroDiff' | 'note'>;
+export const toStackCheck = (c: ResultCheck): StackCheck => ({ status: c.status, heroDiff: c.heroDiff, note: c.note });
 
 export function toHandRecord(c: CompletedHand, tableId: string, ts: number): HandRecord {
   const h = c.hand;
@@ -128,6 +136,7 @@ export function toHandRecord(c: CompletedHand, tableId: string, ts: number): Han
     heroSeat: c.heroSeat, heroCards: c.heroCards ? c.heroCards.map(cardStr) : null,
     heroNet: hero && h.phase === 'complete' ? hero.stack - hero.startStack : null,
     wentToShowdown: h.wentToShowdown, valid: c.valid, observedToEnd: c.observedToEnd,
+    ...(c.resultCheck ? { stackCheck: toStackCheck(c.resultCheck) } : {}),
   };
 }
 
@@ -229,6 +238,7 @@ export interface LiveState {
 export type BotMessage =
   | { type: 'bot/live'; live: LiveState }
   | { type: 'bot/hand'; hand: HandRecord; profiles: PlayerProfile[] }
+  | { type: 'bot/handCheck'; check: ResultCheck }
   | { type: 'bot/decision'; record: DecisionRecord }
   | { type: 'bot/diag'; record: DiagnosticRecord }
   | { type: 'bot/frames'; frames: DebugFrame[] }
@@ -242,6 +252,7 @@ export function parseBotMessage(raw: unknown): BotMessage | null {
   switch (raw.type) {
     case 'bot/live': return isObj(raw.live) && typeof raw.live.tableId === 'string' && typeof raw.live.ts === 'number' ? (raw as unknown as BotMessage) : null;
     case 'bot/hand': return isObj(raw.hand) && typeof raw.hand.handId === 'string' && Array.isArray(raw.hand.events) && Array.isArray(raw.profiles) && raw.profiles.length <= 12 ? (raw as unknown as BotMessage) : null;
+    case 'bot/handCheck': return isObj(raw.check) && typeof raw.check.handId === 'string' && raw.check.handId.length < 300 && ['confirmed', 'top-up', 'awarded-differently', 'unexplained', 'unavailable'].includes(raw.check.status as string) && typeof raw.check.note === 'string' && raw.check.note.length < 1000 && (raw.check.heroDiff === null || typeof raw.check.heroDiff === 'number') ? (raw as unknown as BotMessage) : null;
     case 'bot/decision': return isObj(raw.record) && typeof raw.record.handId === 'string' && isObj(raw.record.decision) ? (raw as unknown as BotMessage) : null;
     case 'bot/diag': return isObj(raw.record) && typeof raw.record.message === 'string' && raw.record.message.length < 2000 ? (raw as unknown as BotMessage) : null;
     case 'bot/frames': return Array.isArray(raw.frames) && raw.frames.length <= 60 && raw.frames.every((f) => isObj(f) && isObj(f.obs) && typeof f.wall === 'number' && typeof f.n === 'number') ? (raw as unknown as BotMessage) : null;

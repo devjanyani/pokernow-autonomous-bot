@@ -25,7 +25,21 @@ const alias = new Map<string, string>();
 let np = 0;
 for (const f of frames) for (const s of f.obs.seats) if (s.name && !alias.has(s.name)) alias.set(s.name, s.isHero ? 'Hero' : `P${++np}`);
 const keys = [...alias.keys()].sort((a, b) => b.length - a.length);
-const anon = (s: string): string => { if (flag('names')) return s; let o = s; for (const k of keys) if (k.length > 1 && o.includes(k)) o = o.split(k).join(alias.get(k) as string); return o; };
+const WORD = /[A-Za-z0-9_]/;
+/** Replace names and table ids by their placeholders, whole words only (a player called "ch" must not rewrite "check"). */
+function anon(s: string): string {
+  if (process.argv.includes('--names')) return s;
+  let o = s;
+  for (const k of keys) {
+    let from = 0;
+    for (let i = o.indexOf(k, from); i >= 0; i = o.indexOf(k, from)) {
+      const whole = !WORD.test(o[i - 1] ?? ' ') && !WORD.test(o[i + k.length] ?? ' ');
+      const to = alias.get(k) as string;
+      if (whole) { o = o.slice(0, i) + to + o.slice(i + k.length); from = i + to.length; } else from = i + k.length;
+    }
+  }
+  return o;
+}
 const stem = (id: string) => anon(id).replace(/:[\d.]+$/, '');
 
 const want = args[1];

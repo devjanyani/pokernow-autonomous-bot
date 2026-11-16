@@ -6,21 +6,21 @@ The built `dist/` was loaded as an unpacked extension against a local stand-in t
 | Check | Result | Detail |
 |---|---|---|
 | database is at version 3 | pass | version 3 |
-| hands recorded from the stand-in table | pass | 7 hands, 143 frames, 22 recommendations |
+| hands recorded from the stand-in table | pass | 7 hands, 144 frames, 23 recommendations |
 | the open table is in the table registry | pass | pgle2edash |
-| log lines carry the table id | pass | {"pgle2edash":1} |
+| log lines carry the table id | pass | {"pgle2edash":8} |
 | older tables added for the test | pass | {"pglOldTableAAAA1111":7,"pglOldTableBBBB2222":7,"pgle2edash":7} |
-| desktop: live tab renders without horizontal page overflow | pass | 729 characters |
+| desktop: live tab renders without horizontal page overflow | pass | 955 characters |
 | desktop: opponents tab renders without horizontal page overflow | pass | 2132 characters |
-| desktop: hands tab renders without horizontal page overflow | pass | 3564 characters |
+| desktop: hands tab renders without horizontal page overflow | pass | 3941 characters |
 | desktop: tables tab renders without horizontal page overflow | pass | 3960 characters |
-| desktop: diag tab renders without horizontal page overflow | pass | 4838 characters |
+| desktop: diag tab renders without horizontal page overflow | pass | 7567 characters |
 | desktop: settings tab renders without horizontal page overflow | pass | 1910 characters |
-| phone: live tab renders without horizontal page overflow | pass | 948 characters |
+| phone: live tab renders without horizontal page overflow | pass | 904 characters |
 | phone: opponents tab renders without horizontal page overflow | pass | 1600 characters |
-| phone: hands tab renders without horizontal page overflow | pass | 3745 characters |
-| phone: tables tab renders without horizontal page overflow | pass | 3960 characters |
-| phone: diag tab renders without horizontal page overflow | pass | 4796 characters |
+| phone: hands tab renders without horizontal page overflow | pass | 4146 characters |
+| phone: tables tab renders without horizontal page overflow | pass | 3961 characters |
+| phone: diag tab renders without horizontal page overflow | pass | 9166 characters |
 | phone: settings tab renders without horizontal page overflow | pass | 1910 characters |
 | opponents: sortable table with sample sizes and style confidence | pass |  |
 | opponents: search filters the list | pass |  |
@@ -32,16 +32,16 @@ The built `dist/` was loaded as an unpacked extension against a local stand-in t
 | hand deletion: opponent profiles unchanged | pass |  |
 | table manager: lists every known table with its counts | pass | 37 rows |
 | table manager: the open table cannot be selected | pass |  |
-| delete history only: the table's rows are gone, its authorisation is kept | pass | hands {"pglOldTableAAAA1111":6,"pgle2edash":9} |
+| delete history only: the table's rows are gone, its authorisation is kept | pass | hands {"pglOldTableAAAA1111":6,"pgle2edash":10} |
 | delete history only: other tables untouched, no orphans | pass |  |
 | revoke only: authorisation removed, nothing else changed | pass |  |
-| profile deletion: the profile is gone | pass | name:pgle2edash:Hero had 9 hands |
+| profile deletion: the profile is gone | pass | name:pgle2edash:Hero had 10 hands |
 | remove all inactive: only the open table remains, with its data | pass | tables pgle2edash; 0 authorisations |
 | remove all inactive: no orphaned recommendations or frames | pass |  |
 | after reload: deleted tables and revoked authorisations do not come back | pass |  |
-| the open table keeps recording after the deletions | pass | 10 -> 13 hands, 211 -> 274 frames |
-| the deleted profile restarts from nothing instead of returning with its old totals | pass | 9 hands before deletion, 3 now |
+| the open table keeps recording after the deletions | pass | 11 -> 14 hands, 230 -> 294 frames |
+| the deleted profile restarts from nothing instead of returning with its old totals | pass | 10 hands before deletion, 3 now |
 | other profiles kept their totals | pass |  |
-| recommend-only throughout: the extension clicked nothing | pass | 13 hands on the table |
+| recommend-only throughout: the extension clicked nothing | pass | 14 hands on the table |
 | no storage or engine errors logged | pass |  |
 | no uncaught errors in the table page, dashboard or popup | pass |  |

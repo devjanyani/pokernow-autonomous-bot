@@ -135,6 +135,26 @@ export interface TrackerState {
   meta: EventMeta[];
 }
 
+/**
+ * The settled stacks of a finished hand compared with what the table shows when the NEXT hand starts
+ * (chips behind plus the blind or bet already in front, same seat and same name).
+ *   confirmed            every stack is exactly as settled
+ *   top-up               only increases: chips were added between hands; the settled result stands
+ *   awarded-differently  the same chips ended up with different players at a showdown (for example the board was
+ *                        run twice, which the page shows as one board): the table's stacks are the result
+ *   unexplained          anything else
+ *   unavailable          it could not be checked (a stack was unreadable, a player of the hand left)
+ */
+export interface ResultCheck {
+  handId: string;
+  status: 'confirmed' | 'top-up' | 'awarded-differently' | 'unexplained' | 'unavailable';
+  /** Observed minus settled, for the seats where they differ. */
+  diffs: { seat: number; diff: number }[];
+  /** Hero's observed minus settled stack (0 when equal), null when Hero was not in the hand or could not be compared. */
+  heroDiff: number | null;
+  note: string;
+}
+
 export interface CompletedHand {
   hand: HandState;
   heroSeat: number | null;
@@ -145,6 +165,13 @@ export interface CompletedHand {
   valid: boolean;
   /** Evidence per event (absent for hands replayed from a text log). */
   meta?: EventMeta[];
+  /**
+   * True when the end was not displayed in full (a loser did not show, or the last fold was not seen) and the
+   * result was confirmed by the stacks at the start of the next hand. `observedToEnd` is true in that case.
+   */
+  endConfirmedByNextHand?: boolean;
+  /** Present when the next hand had already started when this hand was emitted. Otherwise it arrives later through HandTracker.takeResultChecks(). */
+  resultCheck?: ResultCheck;
 }
 
 const HOLDEM_RE = /hold'?em|nlh|no[\s-]*limit/i;
@@ -191,6 +218,8 @@ export class HandTracker {
   private initSince: number | null = null;
   private initialising = false;
   private inferredThisSync = 0;
+  private checks: ResultCheck[] = [];
+  private awaiting: { h: HandState; heroSeat: number | null; since: number } | null = null;
   private legal: TrackerState['legal'] = { status: 'n/a', detail: null, actions: null };
   private lag: { key: string; ts: number } | null = null;
   private actor: { raw: number | null; effective: number | null; lagging: boolean } = { raw: null, effective: null, lagging: false };
@@ -330,9 +359,17 @@ export class HandTracker {
     this.unsupported = false;
 
     if (this.isNewHand(obs)) {
-      const prev = this.finish(false);
+      const before = this.h, emitted = this.emitted;
+      const prev = this.finish(false, obs);
       if (prev) done.push(prev);
+      else if (before && emitted && this.valid && before.phase === 'complete') this.awaiting = { h: before, heroSeat: this.heroSeat, since: obs.ts };
       this.start(obs, heroSeatObs);
+      // The finished hand is compared with the observation the next hand could be STARTED from (all stacks readable).
+      if (this.awaiting && (this.h || obs.ts - this.awaiting.since > 20000)) {
+        const a = this.awaiting;
+        this.awaiting = null;
+        this.checks.push(this.h ? this.resultCheck(a.h, obs, a.heroSeat) : { handId: a.h.handId, status: 'unavailable', diffs: [], heroDiff: null, note: 'no following hand could be read in time' });
+      }
     }
     if (!this.h) return done;
     if (this.valid) {
@@ -487,7 +524,11 @@ export class HandTracker {
 
         // 1. Chips in front grew: a call, bet or raise that is displayed.
         if (o && sameStreet && o.bet > e.streetCommit + tol) {
-          if (o.bet > h.currentBet + tol) apply({ seat, kind: la.raiseKind, to: o.bet }, 'bet-display');
+          if (o.bet > h.currentBet + tol && !la.canRaise && !la.canCheck) {
+            // More chips in front than the bet, where the rules allow no raise (everyone else is all-in): the site
+            // draws a call as the caller's whole stack and returns the excess. Only a call is possible.
+            apply({ seat, kind: 'call' }, 'bet-display', false, `shows ${o.bet} in front against a bet of ${h.currentBet}; no raise is possible here, so this is a call of ${la.callAmount}`);
+          } else if (o.bet > h.currentBet + tol) apply({ seat, kind: la.raiseKind, to: o.bet }, 'bet-display');
           else {
             if (o.bet < Math.min(h.currentBet, e.streetCommit + e.stack) - tol) throw new Error(`seat ${seat} shows ${o.bet} against a bet of ${h.currentBet}: intermediate raises were missed`);
             apply({ seat, kind: 'call' }, 'bet-display');
@@ -503,7 +544,12 @@ export class HandTracker {
           // A folded seat whose stack is lower than expected put chips in that were never seen.
           if (o.stack !== null && o.stack < e.stack - tol) throw new Error(`seat ${seat} folded after unseen betting (stack ${o.stack}, expected ${e.stack})`);
           // Folding when a check is free almost always means a bet was made and taken back unseen.
-          if (la.canCheck) { this.uncertain = true; this.note(`seat ${seat} folded with a free check available: a bet was probably missed`); }
+          if (la.canCheck) {
+            // Folding when a check is free usually means a bet was made and taken back unseen. That would show as
+            // chips missing somewhere; when every stack, bet and the pot are exactly as reconstructed, nothing was missed.
+            if (this.chipsAsReconstructed(obs)) this.note(`seat ${seat} folded although a check was free (no chips moved anywhere, so no bet was missed)`);
+            else { this.uncertain = true; this.note(`seat ${seat} folded with a free check available: a bet was probably missed`); }
+          }
           apply({ seat, kind: 'fold' }, o.folded ? 'fold-display' : 'cards-removed');
           continue;
         }
@@ -531,6 +577,9 @@ export class HandTracker {
           const stackSame = o.stack !== null && Math.abs(o.stack - e.stack) <= tol;
           if (la.canCheck) {
             if (o.stack !== null && o.stack < e.stack - tol) return this.stuck(obs, seat, `seat ${seat} (${e.name}) has ${e.stack - o.stack} fewer chips but shows no bet`);
+            // The page sometimes shows no chip amounts at all for a moment (stacks and pot unreadable, bets drawn as 0).
+            // "No bet in front" means nothing then: wait for a frame in which this seat's chips can be read.
+            if (o.stack === null) return;
             apply({ seat, kind: 'check' }, 'turn-passed');
             continue;
           }
@@ -598,7 +647,7 @@ export class HandTracker {
     if (obs.heroToAct && this.heroSeat !== null && h.toAct === this.heroSeat) {
       const la = legalActions(h)!;
       const c = obs.controls;
-      if (c.call !== null && Number.isFinite(c.call) && Math.abs(c.call - la.callAmount) > this.tolerance) return `deducing the unseen actions gives a call of ${la.callAmount}, but the call button shows ${c.call}: deductions withdrawn`;
+      if (c.call !== null && Number.isFinite(c.call) && Math.abs(c.call - la.callAmount) > this.tolerance && !this.fullCallShown(c.call, la.callAmount)) return `deducing the unseen actions gives a call of ${la.callAmount}, but the call button shows ${c.call}: deductions withdrawn`;
       if (c.check && !la.canCheck) return 'deducing the unseen actions leaves Hero facing a bet, but a check button is shown: deductions withdrawn';
     }
     return null;
@@ -649,10 +698,13 @@ export class HandTracker {
         const la = legalActions(h)!;
         const c = obs.controls;
         const problems: string[] = [];
-        if (c.call !== null && Math.abs(c.call - la.callAmount) > tol) problems.push(`call button shows ${c.call}, engine computes ${la.callAmount}`);
+        const notes: string[] = [];
+        if (c.call !== null && Math.abs(c.call - la.callAmount) > tol) {
+          if (this.fullCallShown(c.call, la.callAmount)) notes.push(`call button shows the full ${c.call}; Hero can call ${la.callAmount} all-in`);
+          else problems.push(`call button shows ${c.call}, engine computes ${la.callAmount}`);
+        }
         if (c.check !== la.canCheck && (c.check || c.call !== null)) problems.push(`check button ${c.check ? 'present' : 'absent'} but engine canCheck=${la.canCheck}`);
         // A button labelled "Bet" means nothing is outstanding; "Raise" means Hero faces a bet. Compared as labels, never as amounts.
-        const notes: string[] = [];
         if (c.wagerKind === 'bet' && la.raiseKind === 'raise' && h.street !== 'preflop') notes.push('the wager button says "Bet" but the engine has a bet outstanding');
         if (c.wagerKind === 'raise' && la.raiseKind === 'bet') notes.push('the wager button says "Raise" but the engine has no bet outstanding');
         const hero = seatOf(h, this.heroSeat);
@@ -678,9 +730,84 @@ export class HandTracker {
     for (const o of obs.seats) {
       const e = h.seats.find((s) => s.seat === o.seat);
       if (!e || !e.dealtIn || o.stack === null) continue;
-      if (Math.abs(e.stack - o.stack) > tol && Math.abs(e.stack + e.streetCommit - (o.stack + o.bet)) > tol) this.uncertain = true;
+      if (Math.abs(e.stack - o.stack) <= tol || Math.abs(e.stack + e.streetCommit - (o.stack + o.bet)) <= tol) continue;
+      // Betting is over and this seat bet more than anyone could call: the site returns the excess before the board is run out.
+      const refund = h.toAct === null ? this.uncalled(e.seat) : 0;
+      if (refund > tol && Math.abs(e.stack + refund - o.stack) <= tol) continue;
+      this.uncertain = true;
+      this.note(`seat ${o.seat} (${e.name}) shows a stack of ${o.stack}, which is not explained by the reconstructed action (expected ${e.stack}${refund > tol ? `, or ${e.stack + refund} with its uncalled ${refund} returned` : ''}): hand kept out of the statistics`);
     }
   }
+
+  /**
+   * Facing a bet larger than Hero's stack, the site labels the call button with the whole amount to match,
+   * not with what Hero can put in. True when `shown` is exactly that amount and the engine's call is Hero's whole stack.
+   */
+  private fullCallShown(shown: number, engineCall: number): boolean {
+    const h = this.h!;
+    const hero = h.seats.find((s) => s.seat === this.heroSeat);
+    if (!hero) return false;
+    const tol = this.tolerance;
+    return Math.abs(engineCall - hero.stack) <= tol && Math.abs(shown - (h.currentBet - hero.streetCommit)) <= tol && shown > engineCall;
+  }
+
+  /** The part of a seat's total bet that no other live player matched (returned to it when the hand is settled). */
+  private uncalled(seat: number): number {
+    const h = this.h!;
+    const me = h.seats.find((s) => s.seat === seat);
+    if (!me || !me.dealtIn || me.folded) return 0;
+    const others = h.seats.filter((s) => s.dealtIn && !s.folded && s.seat !== seat).map((s) => s.totalCommit);
+    return others.length ? Math.max(0, me.totalCommit - Math.max(...others)) : 0;
+  }
+
+  /** Every readable stack, bet and the pot agree with the reconstruction (and every live stack IS readable). */
+  private chipsAsReconstructed(obs: TableObs): boolean {
+    const h = this.h!;
+    const tol = this.tolerance;
+    for (const e of h.seats) {
+      if (!e.dealtIn) continue;
+      const o = obs.seats.find((s) => s.seat === e.seat);
+      if (!o) { if (!e.folded) return false; continue; }
+      if (o.stack === null) { if (!e.folded && !e.allIn) return false; continue; }
+      if (Math.abs(e.stack + e.streetCommit - (o.stack + o.bet)) > tol) return false;
+    }
+    return obs.pot === null || Math.abs(obs.pot - potTotal(h)) <= tol;
+  }
+
+  /** Compare the settled stacks of the finished hand with the first observation of the next hand. */
+  private resultCheck(h: HandState, next: TableObs, heroSeat: number | null = this.heroSeat): ResultCheck {
+    const tol = this.tolerance;
+    const out = (status: ResultCheck['status'], note: string, diffs: ResultCheck['diffs'] = [], heroDiff: number | null = null): ResultCheck => ({ handId: h.handId, status, diffs, heroDiff, note });
+    if (h.phase !== 'complete') return out('unavailable', 'the hand was not complete');
+    const diffs: (ResultCheck['diffs'][number] & { live: boolean })[] = [];
+    let missing = false, heroDiff: number | null = null;
+    for (const e of h.seats) {
+      if (!e.dealtIn) continue;
+      const o = next.seats.find((s) => s.seat === e.seat);
+      if (!o || o.name !== e.name) { if (e.stack > tol && !e.folded) missing = true; continue; } // a busted player may have left; a folded one does not matter
+      if (o.stack === null) return out('unavailable', `the stack of seat ${e.seat} could not be read at the start of the next hand`);
+      // An ante of the new hand has already left the stack of a player who was dealt in (the same rule as when a hand is started).
+      const ante = (next.ante ?? 0) > 0 && (o.hasCards || o.bet > 0) ? (next.ante as number) : 0;
+      const d = Math.round((o.stack + o.bet + ante - e.stack) * 100) / 100;
+      if (e.seat === heroSeat) heroDiff = Math.abs(d) > tol ? d : 0;
+      if (Math.abs(d) > tol) diffs.push({ seat: e.seat, diff: d, live: !e.folded });
+    }
+    const plain = diffs.map((d) => ({ seat: d.seat, diff: d.diff }));
+    const list = (ds: { seat: number; diff: number }[]) => ds.map((d) => `seat ${d.seat} ${d.diff > 0 ? '+' : ''}${d.diff}`).join(', ');
+    if (!diffs.length) return missing ? out('unavailable', 'a player of the hand was no longer at the table', [], heroDiff) : out('confirmed', 'every stack at the start of the next hand is as settled', [], heroDiff);
+    if (diffs.every((d) => d.diff > 0)) return out('top-up', `chips were added between hands (${list(plain)}); the settled result stands`, plain, heroDiff);
+    // A player who had folded cannot have been paid: an increase there is a top-up and says nothing about the pot.
+    const tops = diffs.filter((d) => !d.live && d.diff > 0);
+    const rest = diffs.filter((d) => d.live || d.diff <= 0);
+    const sum = rest.reduce((x, d) => x + d.diff, 0);
+    if (Math.abs(sum) <= tol * rest.length && rest.length >= 2 && rest.every((d) => d.live) && h.wentToShowdown && !missing) {
+      return out('awarded-differently', `the pot was shared differently from the cards shown (${list(rest)}), for example because the board was run twice: the stacks at the start of the next hand are the result${tops.length ? ` (and chips were added between hands: ${list(tops)})` : ''}`, plain, heroDiff);
+    }
+    return out('unexplained', `stacks at the start of the next hand differ from the settled result (${list(plain)})`, plain, heroDiff);
+  }
+
+  /** Result checks for hands that were emitted before their next hand started (each is returned once). */
+  takeResultChecks(): ResultCheck[] { return this.checks.splice(0); }
 
   private collectReveals(obs: TableObs): void {
     const h = this.h!;
@@ -703,10 +830,13 @@ export class HandTracker {
   }
 
   /** Emit the current hand. When `observed` is false the next hand has started and the ending is inferred. */
-  private finish(observed: boolean): CompletedHand | null {
+  private finish(observed: boolean, next: TableObs | null = null): CompletedHand | null {
     const h = this.h;
     if (!h || this.emitted) return null;
+    let confirmed = false;
+    let check: ResultCheck | undefined;
     if (!observed && this.valid && h.phase !== 'complete') {
+      const assumedFrom = this.meta.length;
       // The table moved on before the last action was seen. A pending seat facing a
       // bet must have folded (a call would have produced another street or a showdown).
       try {
@@ -717,13 +847,20 @@ export class HandTracker {
         }
         if (h.phase === 'showdown') this.settle();
       } catch { /* leave incomplete */ }
+      // The assumption (unseen folds, a loser who did not show) is checked against the chips the next hand starts with.
+      if (next) check = this.resultCheck(h, next);
+      if (check && (check.status === 'confirmed' || check.status === 'top-up')) {
+        observed = true; confirmed = true;
+        for (let i = assumedFrom; i < this.meta.length; i++) { this.meta[i].uncertain = false; this.meta[i].note = 'not displayed; confirmed by the stacks at the start of the next hand'; }
+        this.note('ending not displayed in full: result confirmed by the stacks at the start of the next hand');
+      }
     }
     this.emitted = true;
     // An inferred ending can be wrong (an unseen raise that took the pot), so such hands are
     // kept for review but never marked valid: they are not applied to opponent profiles.
     return {
       hand: h, heroSeat: this.heroSeat, heroCards: this.heroCards, reveals: new Map(this.reveals), observedToEnd: observed,
-      valid: observed && this.valid && !this.uncertain && h.phase === 'complete', meta: this.meta.slice(),
+      valid: observed && this.valid && !this.uncertain && h.phase === 'complete', meta: this.meta.slice(), endConfirmedByNextHand: confirmed, ...(check ? { resultCheck: check } : {}),
     };
   }
 }

@@ -203,6 +203,19 @@ describe('deleting tables', () => {
   });
 });
 
+describe('result check arriving after the hand', () => {
+  it('is attached to the stored hand; a check for a deleted hand is dropped and does not bring the hand back', async () => {
+    const st = new BotStorage(new IDBFactory());
+    await seed(st);
+    const check = { status: 'awarded-differently' as const, heroDiff: -113, note: 'run twice' };
+    expect(await st.applyHandCheck('A:h:1:10', check)).toBe(true);
+    expect((await st.recentHands()).find((h) => h.handId === 'A:h:1:10')!.stackCheck).toEqual(check);
+    await st.deleteHands(['A:h:2:20']);
+    expect(await st.applyHandCheck('A:h:2:20', check)).toBe(false);
+    expect((await st.recentHands()).map((h) => h.handId).sort()).toEqual(['A:h:1:10', 'B:h:1:10']);
+  });
+});
+
 describe('deleting recordings, sessions and log lines', () => {
   it('a session deletion removes frames only', async () => {
     const st = new BotStorage(new IDBFactory());
