@@ -31,6 +31,7 @@
     "bot:bench": "tsx sim/bot/bench.ts",
     "bot:e2e": "tsx sim/bot/e2e-extension.ts",
     "bot:e2e:recommend": "tsx sim/bot/e2e-extension.ts --recommend-only",
+    "bot:e2e:dashboard": "tsx sim/bot/e2e-dashboard.ts",
     "bot:replay": "tsx sim/bot/replay-bundle.ts",
     "bot:decisions": "tsx sim/bot/replay-decisions.ts",
     "bot:ranges": "tsx sim/bot/ranges.ts",

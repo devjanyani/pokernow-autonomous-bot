@@ -39,12 +39,17 @@ export interface Settings {
   selectorOverrides: Record<string, string>;
   /** Keep a bounded local recording of observations and reconstruction for the debug bundle. */
   recordDiagnostics: boolean;
+  /**
+   * Strategy experiment: which engine produces recommendations. 'v2' (0.6.0, the default) or 'v1' (0.5.1).
+   * Neither is shown to be better against real opponents; see docs/bot/STRATEGY_V2_DIAGNOSIS.md.
+   */
+  strategyEngine: 'v1' | 'v2';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1, mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [],
   exploitWeight: 1, minThinkMs: 600, maxThinkMs: 2200, assumedClockMs: 20000, minConfidence: 0.7,
-  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true,
+  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2',
 };
 
 const clamp = (x: unknown, lo: number, hi: number, def: number): number => {
@@ -72,8 +77,19 @@ export function sanitizeSettings(raw: unknown): Settings {
     assumedClockMs: clamp(r.assumedClockMs, 3000, 120000, d.assumedClockMs),
     minConfidence: clamp(r.minConfidence, 0.4, 1, d.minConfidence),
     showPanel: r.showPanel !== false, timeoutAction: r.timeoutAction === 'nothing' ? 'nothing' : 'check-fold', selectorOverrides: overrides,
-    recordDiagnostics: r.recordDiagnostics !== false,
+    recordDiagnostics: r.recordDiagnostics !== false, strategyEngine: r.strategyEngine === 'v1' ? 'v1' : 'v2',
   };
+}
+
+/**
+ * Change settings by reading the stored value first, so that a page holding an older copy (popup, dashboard,
+ * table tab) can never write back something another page removed, such as a revoked table authorisation.
+ */
+export async function patchSettings(area: { get(k: string): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> }, change: Partial<Settings> | ((cur: Settings) => Partial<Settings>)): Promise<Settings> {
+  const cur = sanitizeSettings((await area.get('settings')).settings);
+  const next = sanitizeSettings({ ...cur, ...(typeof change === 'function' ? change(cur) : change) });
+  await area.set({ settings: next });
+  return next;
 }
 
 /** True only when clicking is permitted for this table right now. */
@@ -172,7 +188,8 @@ export interface Readiness {
   strategy: Indicator;
 }
 
-export interface DiagnosticRecord { ts: number; level: 'info' | 'warn' | 'error'; source: string; message: string; data?: unknown }
+/** `tableId` is set by the table tab that wrote the line (absent on lines written before 0.7.0). */
+export interface DiagnosticRecord { ts: number; level: 'info' | 'warn' | 'error'; source: string; message: string; data?: unknown; tableId?: string }
 
 /** Snapshot pushed to the dashboard a few times per second. */
 export interface LiveState {

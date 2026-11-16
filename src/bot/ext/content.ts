@@ -193,6 +193,10 @@ async function main(): Promise<void> {
   if (settings.showPanel) panel.mount();
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.profilesDeleted) {
+      const ids = (changes.profilesDeleted.newValue as { ids?: unknown } | undefined)?.ids;
+      if (Array.isArray(ids)) controller.forgetProfiles(ids.filter((i): i is string => typeof i === 'string'));
+    }
     if (area !== 'local' || !changes.settings) return;
     const next = sanitizeSettings(changes.settings.newValue);
     if (JSON.stringify(next.selectorOverrides) !== JSON.stringify(settings.selectorOverrides)) dom = new PokerNowDom(document, selectorsWith(next.selectorOverrides));
@@ -212,7 +216,7 @@ async function main(): Promise<void> {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') controller.flush(); });
   // React to page changes sooner than the poll, coalesced to one read per frame.
   new MutationObserver(() => { if (!scheduled) { scheduled = true; setTimeout(tick, 40); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-  send({ type: 'bot/diag', record: { ts: Date.now(), level: 'info', source: 'content', message: `attached to ${location.pathname} in ${settings.mode} mode` } });
+  send({ type: 'bot/diag', record: { ts: Date.now(), level: 'info', source: 'content', message: `attached to ${location.pathname} in ${settings.mode} mode`, tableId: /\/games\/([\w-]+)/.exec(location.pathname)?.[1] } });
 }
 
 if (/(^|\.)pokernow\.(club|com)$/.test(location.hostname)) void main();

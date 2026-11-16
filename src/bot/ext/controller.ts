@@ -84,17 +84,17 @@ export class LiveController {
 
   constructor(private readonly deps: ControllerDeps, settings: Settings, seed = 1) {
     this.settings = settings;
-    this.agent = new BotAgent({ exploitWeight: settings.exploitWeight, seed, now: deps.now });
+    this.agent = new BotAgent({ exploitWeight: settings.exploitWeight, seed, now: deps.now, engine: settings.strategyEngine });
     this.executor = new GuardedExecutor(deps.driver, () => this.read(), { minConfidence: settings.minConfidence, sleep: deps.sleep, now: deps.now });
     this.recorder = new FrameRecorder(`${Date.now().toString(36)}-${Math.floor(deps.random() * 1e9).toString(36)}`);
   }
 
   updateSettings(s: Settings): void {
-    const exploitChanged = s.exploitWeight !== this.settings.exploitWeight;
+    const exploitChanged = s.exploitWeight !== this.settings.exploitWeight || s.strategyEngine !== this.settings.strategyEngine;
     this.settings = s;
     if (exploitChanged) {
       const old = this.agent.profiles;
-      this.agent = new BotAgent({ exploitWeight: s.exploitWeight, now: this.deps.now });
+      this.agent = new BotAgent({ exploitWeight: s.exploitWeight, now: this.deps.now, engine: s.strategyEngine });
       for (const [k, v] of old) this.agent.profiles.set(k, v);
     }
     if (s.estop || s.mode !== 'autonomous') this.executor.stop();
@@ -114,7 +114,8 @@ export class LiveController {
   }
 
   private diag(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void {
-    this.deps.send({ type: 'bot/diag', record: { ts: Date.now(), level, source: 'controller', message, data } });
+    const tableId = this.lastObs?.tableId;
+    this.deps.send({ type: 'bot/diag', record: { ts: Date.now(), level, source: 'controller', message, data, ...(tableId && tableId !== 'unknown' ? { tableId } : {}) } });
   }
 
   private handleCompleted(tableId: string): void {
@@ -140,6 +141,14 @@ export class LiveController {
         if (!have || have.hands < p.hands) this.agent.profiles.set(p.playerId, sanitizeProfile(p));
       }
     }).catch((e) => this.diag('error', `profile load failed: ${(e as Error).message}`));
+  }
+
+  /**
+   * The user deleted these profiles on the dashboard: drop the copies held here, so the next hand starts them
+   * from nothing instead of writing the old totals back.
+   */
+  forgetProfiles(ids: string[]): void {
+    for (const id of ids) { this.agent.profiles.delete(id); this.requested.delete(id); }
   }
 
   /** Drop everything that belongs to an earlier decision point. */
