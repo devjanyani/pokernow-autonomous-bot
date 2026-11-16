@@ -2,6 +2,16 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.6.1 (2026-11-16)
+Strategy diagnosis. No strategic behaviour changed. Full account: `docs/bot/STRATEGY_V2_DIAGNOSIS.md`.
+- Corrected: the 0.6.0 notes said the baseline-versus-current benchmark did not complete. It did; `reports/strategy-bench-2026-11-14.md` is a finished run and was reproduced exactly from the 0.6.0 commit for the row tested. It shows no setting in which the 0.6.0 engine (v2) beats the 0.5.1 engine (v1) and four in which it is significantly behind in simulation.
+- Fixed: the standard error of a bet's EV, the error of the gap to the runner-up, the mixing weights and the stop-sampling flag were computed from the modelled-responses scenario even when the EV itself came from the pessimistic scenario. They now come from the same scenario as the EV. The best action is unaffected; mixing between close actions can differ slightly.
+- New: every bet or raise reports its value under both response scenarios, and the explanation says when the choice depends on which is right. Sampling error and opponent-model sensitivity are no longer one number.
+- New (benchmark tools only): the preflop and postflop engines can be selected separately; `npm run bot:strategy-diag` (factorial, direct match, ablations, benchmark reproduction), `npm run bot:response-calibration` (predicted against actual opponent responses), `npm run bot:lead-sensitivity`.
+- Measured: the v2 deficit comes from the postflop engine (heads-up against the tight-aggressive program −32.0 ± 20.2 bb/100; six-handed mixed −29.9 ± 26.2), not from the preflop changes. v2 bets 15 to 37 points less often and folds more to flop bets. Removing the pessimistic scenario or the no-bluff rollout does not recover it.
+- Not changed: the out-of-position weak-pair lead. It was traced to an assumption about turn play after a called lead, for which there is no data yet.
+- Added: `docs/bot/POKER_DATA_TRAINING_ROADMAP.md`, a plan for solver-derived and real-hand data. Nothing downloaded or trained.
+
 ## v0.6.0 (2026-11-14)
 Strategy engine. Found by re-running the engine on recorded recommend-mode hands (kept, anonymised, as `tests/bot/fixtures/live-2026-11-13-hands.json`). Full account: `docs/bot/STRATEGY_AUDIT.md`. Tracking, button reading, legal-action checks and the interface are unchanged; autonomous mode remains off by default.
 - Fixed: a called bet was valued as a showdown with no further betting, so small bets with weak hands looked profitable (recorded: bottom pair led into the preflop raiser). The next street's betting is now played out.
@@ -12,7 +22,7 @@ Strategy engine. Found by re-running the engine on recorded recommend-mode hands
 - New: decisions with a hand outside the range of Hero's own line (for example after calling against advice) are labelled out-of-distribution and lower confidence. Bets that rest on the assumed fold rate are labelled model-dependent.
 - New: strategy library (`src/bot/strategy/library/`) with versioned packs, sources, assumptions, exact / approximation matching, and importers for JSON, a text range format and CSV (`npm run bot:ranges`). The two existing chart sets are wrapped as packs marked "source not verified". No solver data is shipped; the missing data is listed in `docs/bot/STRATEGY_LIBRARY.md`.
 - New: 36 decision scenarios with property checks (`npm run bot:scenarios`), a tool to re-run the engine on recorded hands (`npm run bot:decisions`), and a baseline-versus-current benchmark (`npm run bot:strategy-bench`). The 0.5.1 engine stays in the repository as `engine: 'v1'`.
-- Not measured: the full baseline-versus-current benchmark did not complete (the machine ran low on memory and the run was stopped). Pilot runs of 3,000 hands per table on an earlier parameter setting showed no significant difference in win rate between the two engines in simulation. No improvement in win rate is claimed. See `PROJECT_PROGRESS.md`.
+- (Corrected in 0.6.1: the benchmark did complete; see above.) As written at the time: the full baseline-versus-current benchmark did not complete (the machine ran low on memory and the run was stopped). Pilot runs of 3,000 hands per table on an earlier parameter setting showed no significant difference in win rate between the two engines in simulation. No improvement in win rate is claimed. See `PROJECT_PROGRESS.md`.
 
 ## v0.5.1 (2026-11-13)
 Found in a second real recording (kept as `tests/bot/fixtures/live-2026-11-13b.json`).

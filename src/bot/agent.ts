@@ -35,6 +35,16 @@ export interface AgentOptions {
    * version 0.5.1, kept only as the benchmark baseline.
    */
   engine?: 'v1' | 'v2';
+  /**
+   * BENCHMARK ONLY (sim/bot/strategy-diag.ts): choose the engine separately for preflop decisions and for
+   * postflop decisions, to measure the two sets of changes apart. Each overrides `engine` for its streets.
+   * "Preflop v2" = strategy-library lookups and chart-based opponent ranges while deciding preflop.
+   * "Postflop v2" = the two-round engine with the range-aware opponent model (which includes chart-based
+   * preflop ranges for the opponents) while deciding on the flop, turn and river.
+   * The extension never sets these.
+   */
+  preflopEngine?: 'v1' | 'v2';
+  postflopEngine?: 'v1' | 'v2';
 }
 
 export interface DecideOptions {
@@ -64,11 +74,15 @@ export class BotAgent {
   private readonly seed: number;
   private readonly now: () => number;
   private readonly engine: 'v1' | 'v2';
+  private readonly preflopEngine: 'v1' | 'v2';
+  private readonly postflopEngine: 'v1' | 'v2';
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
     this.seed = opts.seed ?? 1;
     this.engine = opts.engine ?? 'v2';
+    this.preflopEngine = opts.preflopEngine ?? this.engine;
+    this.postflopEngine = opts.postflopEngine ?? this.engine;
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
@@ -83,7 +97,7 @@ export class BotAgent {
     if (!cardsAreDistinct([...heroCards, ...h.board])) throw new Error('hero cards collide with the board');
     const counts = tableCounts(h, heroSeat);
     const mode: Decision['mode'] = counts.headsUpTable ? 'heads-up-table' : counts.opponentsContesting <= 1 ? 'heads-up-pot' : 'multiway';
-    const legacy = this.engine === 'v1';
+    const legacy = (h.street === 'preflop' ? this.preflopEngine : this.postflopEngine) === 'v1';
     const { villains, heroPerceived } = buildTable(h, heroSeat, heroCards, this.profiles, this.exploitWeight, this.cache, legacy);
     const rng = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, heroSeat));
     const spot = analyseSpot(h, heroSeat, heroCards);
@@ -203,6 +217,15 @@ export class BotAgent {
     } else if (pick.action === 'call') {
       const price = prep.la.callAmount / Math.max(1, potTotal(h) + prep.la.callAmount);
       basis.push(`call: needs ${pct(price)} of the pot, raw showdown equity ${pct(res.equity.equity)}${res.equity.equity < 0.5 && h.street === 'river' ? ' (bluff-catcher: behind the betting range on average, priced in by the pot odds)' : ''}`);
+    }
+    // Opponent-model sensitivity, kept apart from sampling error: the two response scenarios side by side.
+    const chips = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+    if (pick.evModel !== undefined && pick.evPessimistic !== undefined) {
+      basis.push(`opponent-model sensitivity: this ${pick.action} is worth ${chips(pick.evModel)} chips if opponents respond as modelled and ${chips(pick.evPessimistic)} if they fold less often; the lower figure is the one used. Sampling error (±${(pick.evSe ?? 0).toFixed(1)}) does not cover this difference`);
+    }
+    if (r2.bestModel !== res.best) {
+      const alt = res.candidates[r2.bestModel];
+      basis.push(`model-dependent: under the modelled responses alone "${alt.label}" would be best (${chips(alt.evModel ?? alt.ev ?? 0)} chips); it is not chosen because it is worth ${chips(alt.ev ?? 0)} against opponents who fold less often`);
     }
     return this.finish(h, heroSeat, prep, res.candidates, chosen, {
       equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional, lowConfidence,

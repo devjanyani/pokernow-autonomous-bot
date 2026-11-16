@@ -34,6 +34,14 @@
 // every candidate (common random numbers), which makes EV DIFFERENCES much less
 // noisy than the individual EVs.
 //
+// UNCERTAINTY. Two different things are reported and must not be confused:
+//   sampling error   evSe / evGapSe: Monte Carlo noise of the reported value. It is taken from the
+//                    same per-deal series as the value (for a bet or raise: whichever of the two
+//                    response scenarios gave the lower mean).
+//   model sensitivity evModel versus evPessimistic on each bet or raise, and `bestModel`: how much
+//                    the value moves when the opponents' responses are changed. More samples do
+//                    not reduce it.
+//
 // STATUS: a CALCULATED APPROXIMATION under a HEURISTIC opponent model. It is a
 // two-round look-ahead with rollouts, not a game-tree solve. Hero's own play on
 // the next street follows the same heuristic model as the opponents'. Standard
@@ -109,6 +117,11 @@ export interface LineStats {
 export interface PostflopResult {
   candidates: Candidate[];
   best: number;
+  /**
+   * The best candidate when only the modelled responses are used. If it differs from `best`, the choice
+   * depends on which opponent-response assumption is right; no amount of extra sampling settles that.
+   */
+  bestModel: number;
   evGap: number | null;
   evGapSe: number | null;
   equity: EquityEstimate;
@@ -146,9 +159,12 @@ export class PostflopSolver {
   // internal EV columns: one per (candidate, follow-up plan)
   private readonly colOf: number[][] = [];
   private nCols = 0;
+  // Per-deal values are kept for BOTH response scenarios: index k (k < nCols) is column k under the modelled
+  // responses, index nCols + k the same column against the pessimistic (stickier) opponents. For a column that
+  // is not a bet or raise the two are the same number. Sums and cross-products cover all 2 * nCols series, so
+  // the standard error of a value is always taken from the series the value itself came from.
   private sum!: Float64Array;
   private cross!: Float64Array;
-  private sumRobust!: Float64Array;
   private vals!: Float64Array;
   private readonly stat: { foldAll: number; raised: number; called: number; shareCalled: number; betBehind: number }[] = [];
   private count = 0;
@@ -247,11 +263,10 @@ export class PostflopSolver {
       this.colOf.push(cols);
       this.stat.push({ foldAll: 0, raised: 0, called: 0, shareCalled: 0, betBehind: 0 });
     }
-    const C = this.nCols;
-    this.sum = new Float64Array(C);
-    this.cross = new Float64Array(C * C);
-    this.sumRobust = new Float64Array(C);
-    this.vals = new Float64Array(C);
+    const C2 = 2 * this.nCols;
+    this.sum = new Float64Array(C2);
+    this.cross = new Float64Array(C2 * C2);
+    this.vals = new Float64Array(C2);
   }
 
   private buildCandidates(): void {
@@ -465,7 +480,9 @@ export class PostflopSolver {
         // Bet or raise to spec.to. Evaluated twice with the same random draws: once under the
         // modelled responses and once against a "stickier" opponent (continues more). The
         // candidate is later scored by the LOWER of the two EVs, so a bluff has to survive an
-        // opponent who folds less than the model says, and a value bet one who folds more.
+        // opponent who folds less than the model says. The scenario is ONE-SIDED: there is no
+        // pass against an opponent who folds MORE or raises more, so a value bet is never tested
+        // against the responses that would hurt it (docs/bot/STRATEGY_V2_DIAGNOSIS.md, section 3).
         const T = spec.to;
         const add = T - hero.streetCommit;
         const heroAllIn = add >= heroMaxAdd - 1e-9;
@@ -516,14 +533,23 @@ export class PostflopSolver {
             vFold = vCont = this.settle(0);
             aFold = aCont = this.alt;
           }
-          if (pass === 0) { vals[cols[0]] = vFold; vals[cols[1]] = aFold; vals[cols[2]] = vCont; vals[cols[3]] = aCont; }
-          else { this.sumRobust[cols[0]] += vFold; this.sumRobust[cols[1]] += aFold; this.sumRobust[cols[2]] += vCont; this.sumRobust[cols[3]] += aCont; }
+          const o = pass === 0 ? 0 : C;
+          vals[o + cols[0]] = vFold; vals[o + cols[1]] = aFold; vals[o + cols[2]] = vCont; vals[o + cols[3]] = aCont;
         }
       }
 
-      for (let c = 0; c < C; c++) {
-        this.sum[c] += vals[c];
-        for (let d = c; d < C; d++) this.cross[c * C + d] += vals[c] * vals[d];
+      // Columns that are not bets or raises have one scenario only: mirror them.
+      for (let c = 0; c < specs.length; c++) {
+        const a = specs[c].action;
+        if (a === 'bet' || a === 'raise') continue;
+        for (const k of colOf[c]) vals[C + k] = vals[k];
+      }
+      const C2 = 2 * C;
+      for (let c = 0; c < C2; c++) {
+        const vc = vals[c];
+        this.sum[c] += vc;
+        const row = c * C2;
+        for (let d = c; d < C2; d++) this.cross[row + d] += vc * vals[d];
       }
       this.count++;
     }
@@ -532,19 +558,25 @@ export class PostflopSolver {
   get samples(): number { return this.count; }
 
   result(z = 2.5): PostflopResult {
-    const C = this.nCols;
+    const C = this.nCols, C2 = 2 * C;
     const n = Math.max(1, this.count);
     const K = this.specs.length;
     // Value of each candidate = value of its best follow-up plan. Aggressive candidates are scored
-    // by the worse of the two response scenarios.
+    // by the worse of the two response scenarios. `col[c]` is the SERIES the value came from (k: modelled
+    // responses, C + k: pessimistic), so every variance and covariance below belongs to the reported value.
     const col: number[] = [], ev: number[] = [], lines: LineStats[] = [];
+    const evModel: (number | null)[] = [], evPess: (number | null)[] = [];
     for (let c = 0; c < K; c++) {
       const sp = this.specs[c], cols = this.colOf[c], st = this.stat[c];
       const aggressive = sp.action === 'bet' || sp.action === 'raise';
-      const score = (k: number) => (aggressive ? Math.min(this.sum[k], this.sumRobust[k]) : this.sum[k]) / n;
+      const series = (k: number) => (aggressive && this.sum[C + k] < this.sum[k] ? C + k : k);
+      const score = (k: number) => this.sum[series(k)] / n;
       let pick = cols[0];
       for (const k of cols) if (score(k) > score(pick)) pick = k;
-      col.push(pick); ev.push(score(pick));
+      col.push(series(pick)); ev.push(score(pick));
+      // Each scenario on its own, with the plan that is best inside that scenario.
+      evModel.push(aggressive ? Math.max(...cols.map((k) => this.sum[k])) / n : null);
+      evPess.push(aggressive ? Math.max(...cols.map((k) => this.sum[C + k])) / n : null);
       const second = cols.length === 4 && (pick === cols[2] || pick === cols[3]);
       lines.push({
         foldAll: st.foldAll / n, raised: st.raised / n, called: st.called / n,
@@ -554,7 +586,7 @@ export class PostflopSolver {
       });
     }
     const mean = (k: number) => this.sum[k] / n;
-    const cov = (a: number, b: number) => { const x = col[a], y = col[b]; return this.cross[Math.min(x, y) * C + Math.max(x, y)] / n - mean(x) * mean(y); };
+    const cov = (a: number, b: number) => { const x = col[a], y = col[b]; return this.cross[Math.min(x, y) * C2 + Math.max(x, y)] / n - mean(x) * mean(y); };
     const se = ev.map((_, c) => Math.sqrt(Math.max(0, cov(c, c)) / n));
     let best = 0;
     for (let c = 1; c < K; c++) if (ev[c] > ev[best]) best = c;
@@ -577,9 +609,14 @@ export class PostflopSolver {
     const candidates: Candidate[] = this.specs.map((sp, c) => ({
       action: sp.action, to: sp.action === 'bet' || sp.action === 'raise' ? sp.to : undefined,
       label: sp.label, ev: ev[c], evSe: se[c], freq: w[c] / tot,
+      ...(evModel[c] !== null ? { evModel: evModel[c] as number, evPessimistic: evPess[c] as number } : {}),
     }));
+    // Which action would be best if only the modelled responses counted (no pessimistic scenario)?
+    let bestModel = 0;
+    const m1 = (c: number) => evModel[c] ?? ev[c];
+    for (let c = 1; c < K; c++) if (m1(c) > m1(bestModel)) bestModel = c;
     return {
-      candidates, best, evGap, evGapSe, samples: this.count, lines,
+      candidates, best, bestModel, evGap, evGapSe, samples: this.count, lines,
       separated: evGap === null || (evGapSe !== null && evGap > z * evGapSe && evGap > 0.005 * this.pot),
       equity: {
         equity: m, win: this.wins / n, tie: this.ties / n, samples: this.count,

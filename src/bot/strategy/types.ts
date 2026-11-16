@@ -19,6 +19,13 @@ export interface Candidate {
   evSe: number | null;
   /** Probability the mixed strategy plays this candidate. */
   freq: number;
+  /**
+   * Bets and raises of the version 2 postflop engine only. `ev` is the lower of these two:
+   * the EV under the modelled opponent responses, and the EV against opponents who fold less than modelled.
+   * Their difference is sensitivity to the opponent model, which `evSe` (sampling noise) does not measure.
+   */
+  evModel?: number;
+  evPessimistic?: number;
 }
 
 export interface EquitySummary { equity: number; win: number; tie: number; stdErr: number; samples: number; opponents: number }

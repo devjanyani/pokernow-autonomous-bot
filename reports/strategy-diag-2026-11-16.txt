@@ -1,0 +1,256 @@
+# Raw output of the Phase 2.1 diagnosis experiments (2026-11-16)
+
+Produced by sim/bot/strategy-diag.ts and sim/bot/lead-sensitivity.ts. See docs/bot/STRATEGY_V2_DIAGNOSIS.md.
+The first block (repro) was run on a clean checkout of commit 921447a; everything else on the 0.6.1 source.
+
+## repro: "Heads-up vs tight-aggressive", 10000 hands, session seed 11027
+  v1: report 95.681000  now 95.681000  IDENTICAL
+  v2: report 69.783000  now 69.783000  IDENTICAL
+
+## factorial: hu-tag, 6000 hands, seed 4100, 400 samples
+v1/v1  +111.3 ± 28.1 bb/100   saw flop 29.5% of hands; net per hand played: flop seen 95.7 bb/100, not seen 15.7 bb/100   (15 s)
+v1/v2  +79.3 ± 25.4 bb/100   saw flop 29.5% of hands; net per hand played: flop seen 63.7 bb/100, not seen 15.7 bb/100   (161 s)
+v2/v1  +111.3 ± 28.1 bb/100   saw flop 29.5% of hands; net per hand played: flop seen 95.7 bb/100, not seen 15.7 bb/100   (16 s)
+v2/v2  +79.3 ± 25.4 bb/100   saw flop 29.5% of hands; net per hand played: flop seen 63.7 bb/100, not seen 15.7 bb/100   (153 s)
+  v2/v2 - v1/v1                            -32.0 ± 20.2  *
+  postflop change alone (v1/v2 - v1/v1)    -32.0 ± 20.2  *
+  preflop change alone (v2/v1 - v1/v1)     +0.0 ± 0.0
+  postflop main effect                     -32.0 ± 20.2  *
+  preflop main effect                      -0.0 ± 0.0
+  interaction                              -0.0 ± 0.0
+  flop:facing
+     v1/v1: n=512 call 22.5%, fold 60.2%, raise 17.4%
+     v2/v2: n=620 call 14.7%, fold 70.5%, raise 14.8%
+  flop:free
+     v1/v1: n=1508 bet 88.5%, check 11.5%
+     v2/v2: n=1508 bet 70.2%, check 29.8%
+  pre:facing
+     v1/v1: n=4963 call 20.6%, fold 35.9%, raise 43.5%
+     v2/v2: n=4963 call 20.6%, fold 35.9%, raise 43.5%
+  pre:free
+     v1/v1: n=579 check 67.7%, raise 32.3%
+     v2/v2: n=579 check 67.7%, raise 32.3%
+  river:facing
+     v1/v1: n=104 call 14.4%, fold 78.8%, raise 6.7%
+     v2/v2: n=151 call 10.6%, fold 82.8%, raise 6.6%
+  river:free
+     v1/v1: n=443 bet 73.6%, check 26.4%
+     v2/v2: n=488 bet 36.3%, check 63.7%
+  turn:facing
+     v1/v1: n=357 call 13.4%, fold 73.4%, raise 13.2%
+     v2/v2: n=380 call 19.5%, fold 73.2%, raise 7.4%
+  turn:free
+     v1/v1: n=835 bet 65.3%, check 34.7%
+     v2/v2: n=857 bet 50.1%, check 49.9%
+
+## ablation: hu-tag, 6000 hands, seed 4100. Preflop v1 throughout, so only the postflop engine differs.
+  v1 postflop                              +111.3 ± 28.1    vs v1 postflop +0.0 ± 0.0        (13 s)
+  v2 postflop                              +79.3 ± 25.4     vs v1 postflop -32.0 ± 20.2    vs v2 postflop +0.0 ± 0.0  (173 s)
+  no pessimistic scenario                  +71.1 ± 26.0     vs v1 postflop -40.3 ± 21.0    vs v2 postflop -8.3 ± 15.9  (162 s)
+  Hero's rollout bluffs like the model     +79.3 ± 26.0     vs v1 postflop -32.0 ± 19.7    vs v2 postflop -0.0 ± 14.0  (153 s)
+  both of the above                        +71.2 ± 26.9     vs v1 postflop -40.1 ± 21.3    vs v2 postflop -8.1 ± 16.5  (193 s)
+  opponent statistics off                  +71.7 ± 25.5     vs v1 postflop -39.6 ± 22.8    vs v2 postflop -7.6 ± 18.5  (175 s)
+  v1 postflop, statistics off              +98.7 ± 28.9     vs v1 postflop -12.6 ± 15.2    vs v2 postflop +19.4 ± 21.0  (17 s)
+
+## factorial: six-indep, 4800 hands, seed 4200, 400 samples
+v1/v1  +443.5 ± 98.4 bb/100   saw flop 21.9% of hands; net per hand played: flop seen 479.8 bb/100, not seen -36.2 bb/100   (23 s)
+v1/v2  +449.2 ± 87.4 bb/100   saw flop 21.9% of hands; net per hand played: flop seen 485.4 bb/100, not seen -36.2 bb/100   (118 s)
+v2/v1  +441.8 ± 98.8 bb/100   saw flop 21.7% of hands; net per hand played: flop seen 478.7 bb/100, not seen -36.9 bb/100   (23 s)
+v2/v2  +439.4 ± 86.2 bb/100   saw flop 21.7% of hands; net per hand played: flop seen 476.2 bb/100, not seen -36.9 bb/100   (114 s)
+  v2/v2 - v1/v1                            -4.2 ± 56.4
+  postflop change alone (v1/v2 - v1/v1)    +5.7 ± 54.5
+  preflop change alone (v2/v1 - v1/v1)     -1.7 ± 22.7
+  postflop main effect                     +1.6 ± 53.8
+  preflop main effect                      -5.8 ± 18.9
+  interaction                              -8.1 ± 16.0
+  flop:facing
+     v1/v1: n=248 call 12.1%, fold 65.3%, raise 22.6%
+     v2/v2: n=248 call 10.1%, fold 75.8%, raise 14.1%
+  flop:free
+     v1/v1: n=889 bet 66.3%, check 33.7%
+     v2/v2: n=883 bet 41.9%, check 58.1%
+  pre:facing
+     v1/v1: n=4745 call 3.8%, fold 79.0%, raise 17.2%
+     v2/v2: n=4748 call 3.7%, fold 79.1%, raise 17.1%
+  pre:free
+     v1/v1: n=312 check 85.3%, raise 14.7%
+     v2/v2: n=312 check 79.8%, raise 20.2%
+  river:facing
+     v1/v1: n=31 call 16.1%, fold 71.0%, raise 12.9%
+     v2/v2: n=51 call 15.7%, fold 70.6%, raise 13.7%
+  river:free
+     v1/v1: n=567 bet 70.5%, check 29.5%
+     v2/v2: n=600 bet 48.2%, check 51.8%
+  turn:facing
+     v1/v1: n=84 call 10.7%, fold 65.5%, raise 23.8%
+     v2/v2: n=101 call 17.8%, fold 71.3%, raise 10.9%
+  turn:free
+     v1/v1: n=720 bet 76.9%, check 23.1%
+     v2/v2: n=711 bet 54.0%, check 46.0%
+
+## direct: three seats of a variant against three v1/v1 seats, 4800 hands, seed 4300
+  v1/v2 seats: -2.2 ± 12.9 bb/100 per seat
+  v2/v1 seats: -1.6 ± 8.3 bb/100 per seat
+  v2/v2 seats: -1.0 ± 12.2 bb/100 per seat
+
+## factorial: six-mixed, 4800 hands, seed 4400, 400 samples
+v1/v1  +129.0 ± 38.5 bb/100   saw flop 15.6% of hands; net per hand played: flop seen 111.9 bb/100, not seen 17.1 bb/100   (17 s)
+v1/v2  +99.1 ± 34.3 bb/100   saw flop 15.6% of hands; net per hand played: flop seen 82.0 bb/100, not seen 17.1 bb/100   (89 s)
+v2/v1  +115.5 ± 37.8 bb/100   saw flop 15.2% of hands; net per hand played: flop seen 97.8 bb/100, not seen 17.7 bb/100   (19 s)
+v2/v2  +100.5 ± 34.4 bb/100   saw flop 15.2% of hands; net per hand played: flop seen 82.8 bb/100, not seen 17.7 bb/100   (89 s)
+  v2/v2 - v1/v1                            -28.5 ± 27.2  *
+  postflop change alone (v1/v2 - v1/v1)    -29.9 ± 26.2  *
+  preflop change alone (v2/v1 - v1/v1)     -13.5 ± 13.8
+  postflop main effect                     -22.5 ± 25.4
+  preflop main effect                      -6.0 ± 9.3
+  interaction                              +14.9 ± 16.7
+  flop:facing
+     v1/v1: n=305 call 27.5%, fold 53.1%, raise 19.3%
+     v2/v2: n=336 call 9.5%, fold 72.9%, raise 17.6%
+  flop:free
+     v1/v1: n=565 bet 65.1%, check 34.9%
+     v2/v2: n=548 bet 43.8%, check 56.2%
+  pre:facing
+     v1/v1: n=4669 call 4.2%, fold 73.1%, raise 22.7%
+     v2/v2: n=4667 call 4.2%, fold 73.2%, raise 22.6%
+  pre:free
+     v1/v1: n=271 check 86.7%, raise 13.3%
+     v2/v2: n=271 check 79.0%, raise 21.0%
+  river:facing
+     v1/v1: n=61 call 18.0%, fold 75.4%, raise 6.6%
+     v2/v2: n=48 call 33.3%, fold 62.5%, raise 4.2%
+  river:free
+     v1/v1: n=199 bet 71.4%, check 28.6%
+     v2/v2: n=200 bet 42.0%, check 58.0%
+  turn:facing
+     v1/v1: n=142 call 28.2%, fold 50.0%, raise 21.8%
+     v2/v2: n=118 call 24.6%, fold 57.6%, raise 17.8%
+  turn:free
+     v1/v1: n=348 bet 78.4%, check 21.6%
+     v2/v2: n=326 bet 51.8%, check 48.2%
+
+## factorial: six-mixed (Hero makes loose preflop calls), 4800 hands, seed 4500, 400 samples
+v1/v1  +138.2 ± 59.4 bb/100   saw flop 42.2% of hands; net per hand played: flop seen 119.6 bb/100, not seen 18.6 bb/100   (26 s)
+v1/v2  +131.9 ± 51.5 bb/100   saw flop 42.2% of hands; net per hand played: flop seen 113.2 bb/100, not seen 18.6 bb/100   (208 s)
+v2/v1  +144.7 ± 57.7 bb/100   saw flop 41.4% of hands; net per hand played: flop seen 124.2 bb/100, not seen 20.5 bb/100   (25 s)
+v2/v2  +131.8 ± 50.0 bb/100   saw flop 41.4% of hands; net per hand played: flop seen 111.3 bb/100, not seen 20.5 bb/100   (199 s)
+  v2/v2 - v1/v1                            -6.4 ± 43.4
+  postflop change alone (v1/v2 - v1/v1)    -6.3 ± 40.8
+  preflop change alone (v2/v1 - v1/v1)     +6.5 ± 14.9
+  postflop main effect                     -9.6 ± 40.2
+  preflop main effect                      +3.2 ± 13.7
+  interaction                              -6.5 ± 19.8
+  flop:facing
+     v1/v1: n=1000 call 22.6%, fold 64.4%, raise 13.0%
+     v2/v2: n=1050 call 9.0%, fold 77.0%, raise 14.0%
+  flop:free
+     v1/v1: n=1377 bet 61.8%, check 38.2%
+     v2/v2: n=1350 bet 50.2%, check 49.8%
+  pre:facing
+     v1/v1: n=5352 call 41.6%, fold 39.5%, raise 18.9%
+     v2/v2: n=5353 call 41.3%, fold 39.6%, raise 19.1%
+  pre:free
+     v1/v1: n=292 check 85.6%, raise 14.4%
+     v2/v2: n=292 check 77.7%, raise 22.3%
+  river:facing
+     v1/v1: n=134 call 14.2%, fold 70.9%, raise 14.9%
+     v2/v2: n=123 call 27.6%, fold 65.0%, raise 7.3%
+  river:free
+     v1/v1: n=410 bet 76.8%, check 23.2%
+     v2/v2: n=409 bet 46.0%, check 54.0%
+  turn:facing
+     v1/v1: n=390 call 19.7%, fold 58.7%, raise 21.5%
+     v2/v2: n=326 call 24.5%, fold 62.0%, raise 13.5%
+  turn:free
+     v1/v1: n=738 bet 73.0%, check 27.0%
+     v2/v2: n=654 bet 53.8%, check 46.2%
+
+## ablation: six-indep, 3600 hands, seed 4200. Preflop v1 throughout, so only the postflop engine differs.
+  v1 postflop                              +481.3 ± 115.2   vs v1 postflop +0.0 ± 0.0        (18 s)
+  v2 postflop                              +488.1 ± 101.5   vs v1 postflop +6.8 ± 67.1     vs v2 postflop +0.0 ± 0.0  (95 s)
+  no pessimistic scenario                  +494.8 ± 102.7   vs v1 postflop +13.5 ± 70.7    vs v2 postflop +6.7 ± 17.9  (91 s)
+  Hero's rollout bluffs like the model     +479.6 ± 100.6   vs v1 postflop -1.7 ± 68.7     vs v2 postflop -8.6 ± 17.6  (96 s)
+  both of the above                        +493.7 ± 102.5   vs v1 postflop +12.4 ± 69.7    vs v2 postflop +5.6 ± 24.1  (90 s)
+  opponent statistics off                  +327.9 ± 90.6    vs v1 postflop -153.4 ± 82.8   vs v2 postflop -160.3 ± 62.4  (88 s)
+  v1 postflop, statistics off              +402.2 ± 108.1   vs v1 postflop -79.1 ± 55.7    vs v2 postflop -86.0 ± 68.5  (17 s)
+
+## repro on the 0.6.1 source (after the uncertainty fix)
+  v1: report 95.681000  now 95.681000  IDENTICAL
+  v2: report 69.783000  now 66.008500  differs by -3.774 bb/100
+
+# Lead sensitivity: oop-caller-bottom-pair-dry
+BB called a BTN open, flop K95 rainbow, bottom pair, first to act. Pot 110 chips (5.5bb), 6000 deals per valuation. EVs in big blinds relative to folding.
+
+## 1. Modelled behaviour of P0 (range: 37.4% of hands; heaviest: A6o A7o T8o J8o Q8o A8o JTo QTo ATo QJo AJo AQo; source: Greenline 6-max chart, BTN-RFI (source not verified))
+Hero's hand: raw showdown equity against that range 49%.
+| Hero's action | P0 folds | calls | raises |
+|---|---|---|---|
+| lead 33% of the pot | 28% | 60% | 12% |
+| lead 66% of the pot | 36% | 51% | 12% |
+| lead 100% of the pot | 44% | 44% | 12% |
+
+After a check: P0 bets half the pot 60% of the time and checks back 40% (the only bet size the simulation gives opponents).
+Hero's raw showdown equity against the hands that: bet when checked to 36%; check back 68%; call a small lead 44%; raise a small lead 23%.
+With no further betting, calling a half-pot bet would be worth +1.18bb, and a small lead that is called +2.16bb.
+
+## 2. Value of each line (big blinds)
+| Line | EV |
+|---|---|
+| check, fold to a bet (then the model's play on the turn when it is checked back) | +1.37 |
+| check, fold to a bet (and give up to any turn bet) | +1.24 |
+| check, call a bet (then the model's play on the turn) | +0.94 |
+| check, call a bet (then give up to any turn bet) | +1.01 |
+| bet small (36): modelled responses | +2.28 |
+| bet small (36): opponent folds less (the figure used) | +2.07 |
+| bet medium (73): modelled responses | +1.92 |
+| bet medium (73): opponent folds less (the figure used) | +1.73 |
+| bet large (110): modelled responses | +1.51 |
+| bet large (110): opponent folds less (the figure used) | +1.33 |
+| bet overbet (165): modelled responses | +0.88 |
+| bet overbet (165): opponent folds less (the figure used) | +0.63 |
+
+Small lead (33% pot): all fold 28%, called 60%, raised 12%; Hero wins 44% at showdown against the hands that call; plan when raised: fold if raised.
+After a check an opponent bets in 60% of deals.
+Arithmetic: 28% x pot (+1.53) + 12% x lose the bet (-0.22) + 60% x value when called (+1.60 each) = +2.28.
+Holding the value-when-called and the raise frequency fixed, the lead beats the check (+1.37) only if the opponent folds more than 4% of the time (modelled: 28%).
+  with a raise frequency of 10%: needs folds above 3%
+  with a raise frequency of 20%: needs folds above 11%
+  with a raise frequency of 30%: needs folds above 20%
+
+## 3. Sensitivity: opponent tendencies varied (stickiness moves how often it folds, aggression how often it bluffs)
+| stickiness | aggression | folds to the lead | raises the lead | bets when checked to | EV check | EV lead (modelled) | EV lead (used) | engine's choice |
+|---|---|---|---|---|---|---|---|---|
+| -0.8 | -0.8 | 52% | 10% | 49% | +1.77 | +2.94 | +2.74 | bet small (36) |
+| -0.8 | 0 | 51% | 12% | 60% | +1.36 | +2.79 | +2.52 | bet small (36) |
+| -0.8 | 0.8 | 49% | 15% | 73% | +0.93 | +2.58 | +2.30 | bet small (36) |
+| -0.4 | -0.8 | 40% | 10% | 49% | +1.78 | +2.72 | +2.53 | bet small (36) |
+| -0.4 | 0 | 39% | 12% | 60% | +1.37 | +2.51 | +2.28 | bet small (36) |
+| -0.4 | 0.8 | 38% | 15% | 73% | +0.94 | +2.28 | +2.04 | bet small (36) |
+| 0 | -0.8 | 29% | 10% | 49% | +1.78 | +2.52 | +2.34 | bet small (36) |
+| 0 | 0 | 28% | 12% | 60% | +1.37 | +2.28 | +2.07 | bet small (36) |
+| 0 | 0.8 | 27% | 14% | 73% | +0.94 | +2.04 | +1.83 | bet small (36) |
+| 0.4 | -0.8 | 19% | 10% | 49% | +1.79 | +2.33 | +2.23 | bet small (36) |
+| 0.4 | 0 | 18% | 12% | 60% | +1.38 | +2.06 | +1.92 | bet small (36) |
+| 0.4 | 0.8 | 18% | 14% | 73% | +0.95 | +1.82 | +1.67 | bet small (36) |
+| 0.8 | -0.8 | 11% | 10% | 49% | +1.79 | +2.24 | +2.13 | bet small (36) |
+| 0.8 | 0 | 11% | 12% | 60% | +1.38 | +1.93 | +1.81 | bet small (36) |
+| 0.8 | 0.8 | 10% | 14% | 73% | +0.94 | +1.69 | +1.62 | bet small (36) |
+
+## 4. Structural assumptions switched one at a time (neutral opponent)
+| Assumption changed | EV check | EV small lead (used) | choice |
+|---|---|---|---|
+| none (current engine) | +1.37 | +2.07 | lead |
+| no pessimistic scenario | +1.37 | +2.28 | lead |
+| pessimistic scenario twice as strong (opponent folds about 20 points less) | +1.37 | +1.91 | lead |
+| Hero's simulated turn play bluffs like everyone else's | +1.40 | +2.16 | lead |
+
+## 5. The simulated turn after each flop line
+Values in big blinds, counted from the flop decision (what Hero put in on the flop is already subtracted). Each cell: share of deals, and the average value of the line in those deals.
+| Flop line | Pot going to the turn | Hero put in on the flop | Value of the line | Opponent bets the turn, Hero folds | Hero bets the turn, opponent folds | A turn bet is called | Turn checked through |
+|---|---|---|---|---|---|---|---|
+| flop checked through | 5.5bb | 0.00bb | +3.43 | 7% at +0.00 | 10% at +5.50 | 21% at +3.15 | 62% at +3.58 |
+| Hero check-calls a half-pot bet | 11.0bb | 2.75bb | -0.89 | 16% at -2.75 | 1% at +8.25 | 48% at -3.15 | 35% at +2.84 |
+| Hero leads small and is called | 9.1bb | 1.80bb | +1.69 | 24% at -1.80 | 8% at +7.30 | 12% at +2.26 | 57% at +2.30 |
+
+After calling the lead the opponent bets the turn and takes the pot in 24% of deals. After betting the flop itself and being called, the same model has it bet the turn in about 64% of deals.
+Holding everything else fixed, the lead stops beating the check once the opponent takes the pot on the turn in more than 59% of the deals in which it called the lead.

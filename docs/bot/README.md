@@ -57,6 +57,9 @@ In recommend mode, on your turn, the Live page (and the overlay) shows the actio
 3. For a bet or raise: `Bet type:` (continuation bet, lead (donk bet), probe bet, delayed continuation bet, raise) and its `purpose` (value bet, protection or thin value, thin bet, bluff or semi-bluff); then `Modelled responses:` how often everyone folds, someone calls, someone raises, how often you win against the hands that call, and the plan if raised.
    For a check: how often an opponent is expected to bet behind you and whether the plan is to call or fold.
 4. Warnings, when they apply: `Out-of-distribution` (your hand is not one the line you took normally contains, for example after calling against advice), `Model-dependent` (the bet only pays if opponents fold as often as assumed, or an opponent's line fits the model poorly). Any of these adds "Lower confidence" to the last line.
+5. From 0.6.1, for a bet or raise: `Opponent-model sensitivity:` the bet's value if opponents respond as modelled and its value if they fold less often. The lower one is used. If the two disagree about the best action, a `Model-dependent` line names the other action. The "±" figure elsewhere is sampling noise only and does not cover this difference.
+
+The engine's EV numbers come from a hand-set opponent model. Against simulated opponents the current engine (v2) bets less than the previous one (v1) and does not win more; see [STRATEGY_V2_DIAGNOSIS.md](STRATEGY_V2_DIAGNOSIS.md). Treat close decisions as close.
 
 Open **All options considered, full reasoning and opponent ranges** under the recommendation to see every candidate with its EV and the range assumed for each opponent. Preflop, the Why list names the strategy pack used, says "source not verified" where that is the case, and lists every way the situation departs from what the pack was made for.
 

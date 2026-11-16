@@ -67,7 +67,7 @@ Duplicate rotation, 100bb, 400 samples per decision, 95% intervals.
 
 Read these with care:
 
-- **All of the above is the 0.5.1 strategy engine.** The 0.6.0 engine has only pilot measurements (3,000 hands per table, an earlier parameter setting): no significant difference from 0.5.1 in simulation. The full comparison (`npm run bot:strategy-bench`) has not completed. See `PROJECT_PROGRESS.md`.
+- **All of the above is the 0.5.1 strategy engine (v1).** The 0.6.0 engine (v2) was compared with it in `reports/strategy-bench-2026-11-14.md` and in [STRATEGY_V2_DIAGNOSIS.md](STRATEGY_V2_DIAGNOSIS.md): v2 is ahead nowhere and significantly behind in several simulated settings, because it bets less and folds more after the flop. Neither engine has been measured against people or against a solver.
 
 - **Heads-up it is statistically level with the engine it replaces**, on this seed and on an earlier 30,000-hand run before the last strategy change (+7.6 ± 15.7). It is not shown to be better.
 - **Six-max versus the original engine was not completed.** The attempt was stopped by the machine running low on memory. `npm run bot:bench -- --legacy6` runs it.
