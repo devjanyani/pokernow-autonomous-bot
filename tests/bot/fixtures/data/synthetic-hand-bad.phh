@@ -1,0 +1,9 @@
+# SYNTHETIC, deliberately wrong: the big blind acts before the flop when it is the button's turn.
+variant = 'NT'
+antes = [0, 0, 0]
+blinds_or_straddles = [1, 2, 0]
+min_bet = 2
+starting_stacks = [200, 200, 200]
+actions = ['d dh p1 ????', 'd dh p2 ????', 'd dh p3 AsKs', 'p2 cbr 6', 'p3 f', 'p1 f']
+venue = 'synthetic'
+hand = 3

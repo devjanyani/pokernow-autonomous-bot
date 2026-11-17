@@ -54,3 +54,5 @@ debug_bundles/
 
 # local repository dump (not source)
 repomix-output-*.txt
+# external datasets and their normalised copies (never committed)
+/data/

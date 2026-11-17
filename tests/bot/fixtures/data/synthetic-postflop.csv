@@ -1,0 +1,7 @@
+preflop_action,board_flop,board_turn,board_river,aggressor_position,postflop_action,evaluation_at,available_moves,pot_size,hero_position,holding,correct_decision
+BTN/2.5bb/BB/call,Ks7h2d,,,IP,OOP_CHECK,Flop,"['Check', 'Bet 4']",5.5,IP,AhKd,Bet 4
+BTN/2.5bb/BB/call,Ks7h2d,5c,,IP,OOP_CHECK/IP_BET_4/OOP_CALL/dealcards/5c/OOP_BET_9,Turn,"['Fold', 'Call', 'Raise 27']",22.5,IP,QcJc,Fold
+CO/2.5bb/BB/call,9s8s3d,2h,Kc,IP,OOP_CHECK/IP_CHECK/dealcards/2h/OOP_CHECK/IP_CHECK/dealcards/Kc,River,"['Check', 'Bet 4']",5.5,OOP,Tc9c,Check
+BTN/2.5bb/BB/call,Ks7h2d,,,IP,OOP_CHECK,Flop,"['Check', 'Bet 4']",5.5,IP,KsQd,Bet 4
+BTN/2.5bb/BB/call,Ks7h2d,,,IP,OOP_CHECK,Flop,"['Check', 'Bet 4']",5.5,IP,AcQc,Call
+BTN/2.5bb/BB/call,Ks7h2d,,,IP,OOP_CHECK,Preflop,"['Check', 'Bet 4']",5.5,IP,AcQc,Check
