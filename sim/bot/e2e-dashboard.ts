@@ -162,7 +162,7 @@ async function main(): Promise<void> {
     const stale = Array.from({ length: 34 }, (_, i) => `pglStale${String(i).padStart(2, '0')}xxxxxxxx`);
     await dash.evaluate(async (ids) => {
       const cur = (await chrome.storage.local.get('settings')).settings;
-      await chrome.storage.local.set({ settings: { ...cur, authorizationConfirmed: true, authorizedTables: ids } });
+      await chrome.storage.local.set({ settings: { ...(cur as Record<string, unknown>), authorizationConfirmed: true, authorizedTables: ids } });
     }, [...OLD, ...stale]);
     await dash.reload();
     await sleep(800);

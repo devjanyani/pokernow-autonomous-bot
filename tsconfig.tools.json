@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "rootDir": ".", "types": ["chrome", "node"] },
+  "include": ["sim/bot/**/*.ts", "src/bot/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

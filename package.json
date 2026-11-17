@@ -4,6 +4,7 @@
   "description": "Fully local No-Limit Hold'em bot for authorised PokerNow bot competitions (Chrome MV3 extension), with an offline 2-10 player simulator. Built on the gto-poker-overlay toolkit.",
   "scripts": {
     "build": "tsc --noEmit -p . && webpack --mode production",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
     "dev": "webpack --mode development --watch",
     "clean": "rm -rf dist",
     "test": "vitest run",
@@ -39,7 +40,13 @@
     "bot:strategy-bench": "tsx sim/bot/strategy-bench.ts",
     "bot:strategy-diag": "tsx sim/bot/strategy-diag.ts",
     "bot:lead-sensitivity": "tsx sim/bot/lead-sensitivity.ts",
-    "bot:response-calibration": "tsx sim/bot/response-calibration.ts"
+    "bot:response-calibration": "tsx sim/bot/response-calibration.ts",
+    "bot:audit": "tsx sim/bot/audit-bundle.ts",
+    "bot:audit-hand": "tsx sim/bot/audit-hand.ts",
+    "bot:reference": "tsx sim/bot/reference-eval.ts",
+    "bot:independent-bench": "tsx sim/bot/independent-bench.ts",
+    "bot:river": "tsx sim/bot/river-compare.ts",
+    "bot:ml-compare": "tsx sim/bot/ml-compare.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.37",

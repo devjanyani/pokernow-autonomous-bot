@@ -36,6 +36,7 @@ import { NEUTRAL } from '../ranges/postflop-model';
 import { betRole, leadSeatFor } from '../strategy/spot';
 import { ActionInput, potTotal, seatOf } from '../table/engine';
 import type { Decision } from '../strategy/types';
+import { INDEPENDENT_FACTORIES } from './independent';
 import { Policy, PolicyView } from './table';
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -229,5 +230,6 @@ export const POLICY_FACTORIES: Record<string, () => Policy> = {
   'loose-aggressive': () => archetypePolicy('loose-aggressive'),
   'range-equity': () => rangeEquityPolicy(),
   'range-aware': () => rangeAwarePolicy(),
+  ...INDEPENDENT_FACTORIES,
   bot: () => botPolicy(),
 };
