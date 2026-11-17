@@ -2,6 +2,19 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.7.0 (2026-11-16)
+Interface, tracking audit, first part of Phase 2.2. No strategy behaviour changed. Accounts: `docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md`, `docs/bot/PHASE_2_2_REPORT.md`, `docs/bot/STORAGE.md`.
+- New: Tables tab. Search, nickname, last seen, hands, frames, log lines, authorisation. Revoke authorisation and delete history are separate; remove stale authorisations; remove all inactive tables; optional export first. The open table is never included.
+- New: deletion of hands, single-hand recordings, recording sessions, log lines and profiles, each in one transaction. Deleting hands never changes opponent profiles; a deleted profile or revoked authorisation does not come back.
+- Changed: Opponents, Hand review, Diagnostics and Settings rebuilt (sortable, searchable, paged tables; playing cards; actions by street with recommended against played; results that are not verified are greyed and never summed). The popup shows this table and a count of the others instead of every authorised id.
+- Changed: database version 3 (per-table indexes, table and session registries). Existing data is upgraded in place; no stored row is rewritten.
+- New: strategy engine selector under Settings, Strategy experiments. Default unchanged (version 2).
+- Fixed (tracking, from the 2026-11-16 recording, each with a test on recorded frames): an uncalled bet returned during an all-in run-out marked the hand invalid, silently; a showdown where the loser did not show was stored as "ending not observed"; a call drawn as the caller's whole stack was read as an illegal raise; a check was deduced from a frame with no readable chips; a fold with a free check marked the hand uncertain; the call button of a short all-in call suppressed the recommendation.
+- New: every finished hand is compared with the stacks the next hand starts with. A board run twice (the page shows one board) is detected and the table's result is used; an unexplained difference shows the result as unverified.
+- New (offline tools, not in the extension): reference evaluation of single decisions under the simulated opponents' true policies; six independent benchmark opponents; river reference from the in-repository solver, validated on a closed-form game; offline adapter for the existing PokerBench model; data schema with provenance, validation and importers; opponent-response calibration framework. `npm run typecheck:tools` now type-checks the `sim/` tools.
+- Measured: against independent opponents version 2 is ahead of version 1 at four of eight tables and behind at none; against the tight-aggressive program it is behind per decision (−0.64 ± 0.36 bb), mostly on the river; with nothing bet on the river it checks 62% where a solver reference for its own ranges checks 30%. Neither engine is claimed to be stronger.
+- Not done: no dataset downloaded, no model trained, no prior changed; not tested on the live site.
+
 ## v0.6.1 (2026-11-16)
 Strategy diagnosis. No strategic behaviour changed. Full account: `docs/bot/STRATEGY_V2_DIAGNOSIS.md`.
 - Corrected: the 0.6.0 notes said the baseline-versus-current benchmark did not complete. It did; `reports/strategy-bench-2026-11-14.md` is a finished run and was reproduced exactly from the 0.6.0 commit for the row tested. It shows no setting in which the 0.6.0 engine (v2) beats the 0.5.1 engine (v1) and four in which it is significantly behind in simulation.

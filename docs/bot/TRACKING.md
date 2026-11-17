@@ -39,6 +39,22 @@ Fix in 0.5.1: buttons are classified by label text only (`pokernow/controls.ts`)
 
 Not in the recording, so still unverified: antes, straddles, a dead big blind, run-it-twice, all-in run-outs with side pots, Hero's own bet entry, and tables with fewer than six dealt in.
 
+### Third recording (2026-11-16, v0.6.0, eight sessions, 138 hands)
+
+Audited in [LONG_SESSION_DIAGNOSTIC_AUDIT.md](LONG_SESSION_DIAGNOSTIC_AUDIT.md). Seven things the page does that the tracker now handles (each with a test on frames cut from the recording, `tests/bot/live-2026-11-16.test.ts`):
+
+| What the page shows | Rule now |
+|---|---|
+| The uncalled part of an all-in goes back to the bettor's stack before the board is dealt | With nobody left to act, `stack = settled stack + that seat's uncalled bet` is consistent. Any other unexplained stack keeps the hand out of the statistics and always writes a message naming the seat. |
+| At showdown the loser does not show | The hand is settled with the hidden hand losing and accepted only if the next hand starts with exactly those stacks. The same check confirms a last fold that was not displayed. |
+| A call of an all-in is drawn as the caller's whole stack in front | More chips than the bet where no raise is legal is a call. |
+| For a moment no chip amounts are shown (stacks and pot unreadable, bets drawn as 0) | No check is deduced from a frame in which that seat's stack cannot be read. |
+| A player folds although a check is free | Accepted when every stack, bet and the pot are as reconstructed (nothing was missed); otherwise still uncertain. |
+| The board is run twice but one board is shown | Every finished hand is compared with the stacks at the start of the next hand (`ResultCheck`): confirmed, top-up, awarded differently, unexplained, or unavailable. |
+| Facing an all-in for more than Hero has, the call button shows the full amount | That agrees with a call capped at Hero's stack; the recommendation is no longer suppressed there. |
+
+Also seen: the page numbers seats relative to Hero, so when Hero is not seated every other seat number shifts by one. Decisions are unaffected (there are none to make); the hand before and after cannot be compared seat by seat and that result is reported as not cross-checked.
+
 ## 1. Root-cause analysis (as written for 0.4.0, before any real recording)
 
 > Section 0 supersedes this where they differ. Defect 1 below was not the cause on the live site; defects 2 to 4 were real code defects and their fixes stand.

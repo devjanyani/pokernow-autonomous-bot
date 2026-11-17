@@ -118,3 +118,6 @@ npm test                     # everything, including the original repository's s
 - [TRACKING.md](TRACKING.md): state reconstruction, turn tracking, the debug bundle, replay, and the steps for the next live test.
 - [STORAGE.md](STORAGE.md): the local data schema.
 - [LIMITATIONS.md](LIMITATIONS.md): what is tested, what is not, failure modes, and the prioritised to-do list.
+- [STORAGE.md](STORAGE.md): what is stored locally, and exactly what each kind of deletion removes.
+- [LONG_SESSION_DIAGNOSTIC_AUDIT.md](LONG_SESSION_DIAGNOSTIC_AUDIT.md): the audit of the 2026-11-16 recording and the tracking fixes that came from it.
+- [PHASE_2_2_REPORT.md](PHASE_2_2_REPORT.md): reference evaluation, independent opponents, river solver reference, the PokerBench model, data pipeline.
