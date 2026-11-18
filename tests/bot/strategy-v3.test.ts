@@ -28,14 +28,20 @@ const walk = (n: TNode, f: (n: TNode, path: string) => void, path = '') => { f(n
 describe('version 3 opponent model: responses depend on the betting so far', () => {
   const k = defaultKnobs(NEUTRAL);
   const base = { street: 'flop' as const, betFrac: 0.6, level: 1, checkRaised: false, ownRaised: false, role: 'neutral' as const, canRaise: true };
-  it('the same holding folds more to a check-raise, more when its bet is raised, and more again at the third raise', () => {
+  it('with no evidence a raise adds no fold threshold (the range update carries it); evidence moves it per situation', () => {
     for (const s of [0.45, 0.55, 0.65]) {
       const bet = respond3(s, base, k), raised = respond3(s, { ...base, level: 2, ownRaised: true }, k);
-      const cr = respond3(s, { ...base, level: 2, ownRaised: true, checkRaised: true }, k), third = respond3(s, { ...base, level: 3, ownRaised: true }, k);
-      expect(raised.fold).toBeGreaterThan(bet.fold);
-      expect(cr.fold).toBeGreaterThan(raised.fold);
-      expect(third.fold).toBeGreaterThan(raised.fold);
-      for (const r of [bet, raised, cr, third]) expect(r.fold + r.call + r.raise).toBeCloseTo(1, 9);
+      const third = respond3(s, { ...base, level: 3, ownRaised: true }, k);
+      // Same holding: facing a raise, version 2's raise-facing threshold only (no version 3 extra, so the third raise
+      // folds exactly as the second); fewer re-raises facing a raise and fewer again at the third raise.
+      expect(raised.fold).toBeGreaterThanOrEqual(bet.fold);
+      expect(third.fold).toBeCloseTo(raised.fold, 9);
+      expect(raised.raise).toBeLessThan(bet.raise);
+      expect(third.raise).toBeLessThan(raised.raise);
+      // A player measured to fold to check-raises folds more to one, and only to one.
+      const kx = { ...k, checkRaiseShift: 0.1 };
+      expect(respond3(s, { ...base, level: 2, ownRaised: true, checkRaised: true }, kx).fold).toBeGreaterThan(respond3(s, { ...base, level: 2, ownRaised: true }, kx).fold);
+      for (const r of [bet, raised, third]) expect(r.fold + r.call + r.raise).toBeCloseTo(1, 9);
     }
   });
   it('raising is impossible when the tree does not allow it, and re-raising needs a stronger hand', () => {

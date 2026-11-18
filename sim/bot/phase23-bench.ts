@@ -20,6 +20,7 @@ import { bb100, pairedDiff, playSession, Policy, PolicyView } from '../../src/bo
 import { botPolicy } from '../../src/bot/sim/policies';
 import { mlAdvice } from './ml-adapter';
 import { makePolicy } from './run';
+import { MODEL3 } from '../../src/bot/strategy/v3/model';
 
 const argS = (f: string, d: string) => { const i = process.argv.indexOf(`--${f}`); return i >= 0 ? process.argv[i + 1] : d; };
 const argN = (f: string, d: number) => Number(argS(f, String(d)));
@@ -89,6 +90,8 @@ async function main(): Promise<void> {
   const engines = argS('engines', 'v1,v2,v3').split(',') as Eng[];
   const hands = argN('hands', 2000), seed = argN('seed', 12100), samples = argN('samples', 400);
   const out = argS('out', ''), json = argS('json', '');
+  // Development only: override version 3 model constants, e.g. --model3 '{"raisedShift":0}'.
+  const m3 = argS('model3', ''); if (m3) Object.assign(MODEL3, JSON.parse(m3));
   const head = ['| Table | Hands | ' + engines.map((e) => e).join(' | ') + ' | v3 − v2 | v3 − v1 |' + (engines.includes('ml') ? ' ml − v2 |' : '') + ' Bets when checked to (' + engines.join(' / ') + ') | Folds to a bet | Check-raises when possible | v3 postflop ms (median / p95) |',
     '|---|---|' + engines.map(() => '---').join('|') + '|---|---|' + (engines.includes('ml') ? '---|' : '') + '---|---|---|---|'];
   const lines = [`## Phase 2.3 benchmark, seed ${seed}, ${samples} samples per decision`, '', ...head];

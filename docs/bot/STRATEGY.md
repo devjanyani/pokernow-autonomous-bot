@@ -219,9 +219,9 @@ Known limits of this method: one more street, not the whole tree; one bet size f
 
 Section 5 still describes the order of checks. Changes: chart lookups go through the library and cite the pack, its verification status and every departure from its assumptions; the big blind over limpers uses the chart's raising hands; the width of a raise Hero faces is the width of the range modelled for the raiser's actual line, not the first-in width of the raiser's seat.
 
-## 9. Version 3 (0.8.0, experimental, off by default): search over betting sequences
+## 9. Version 3 (0.8.0, experimental, offline only): search over betting sequences
 
-Selected with Settings → Strategy experiments → Version 3, or `engine: 'v3'`. It replaces version 2 only in heads-up pots after the flop; preflop decisions and pots with two or more opponents are version 2, and the explanation says so. Full account, audit and measurements: [PHASE_2_3_ADVANCED_STRATEGY.md](PHASE_2_3_ADVANCED_STRATEGY.md).
+Selected with `engine: 'v3'` in the agent and the simulation tools. **Not offered in the extension**: it did not beat version 2 in the benchmark ([reports/PHASE_2_3_BENCHMARK.md](../../reports/PHASE_2_3_BENCHMARK.md)), so the Settings selector still offers versions 1 and 2 only. It replaces version 2 only in heads-up pots after the flop; preflop decisions and pots with two or more opponents are version 2, and the explanation says so. Full account, audit and measurements: [PHASE_2_3_ADVANCED_STRATEGY.md](PHASE_2_3_ADVANCED_STRATEGY.md).
 
 ### 9.1 What it computes (`strategy/v3/search.ts`), a calculated approximation
 
@@ -241,13 +241,15 @@ Version 2's functions (section 8.3) with thresholds that depend on the betting s
 | The opponent faces | Continue threshold | Raise probability |
 |---|---|---|
 | a bet | version 2 | version 2 × the player's raise tendency |
-| a raise of its own bet | + 0.04 (`foldVsRaise` evidence moves it) | × 0.6 |
-| a check-raise | + 0.06 (`foldToCheckRaise` evidence moves it) | × 0.6 |
-| a third raise or more | + 0.08 more | × 0.3 |
+| a raise of its own bet | version 2's raise-facing threshold; `foldVsRaise` evidence moves it | × 0.6 |
+| a check-raise | the same; `foldToCheckRaise` evidence moves it | × 0.6 |
+| a third raise or more | the same | × 0.3 |
 | may bet first | version 2 bet probability, × turn-barrel tendency when it holds the lead, × river-bet tendency on the river | bet size: the larger size with the player's own large-bet share (prior 45%), a little more often with the strongest and weakest holdings |
+
+Until the 0.8.0 benchmark the three raise rows also added 0.04, 0.06 and 0.08 to the threshold. That counted the strength of a raising range twice (the reach weights already carry it) and made version 3 raise far too often; they are 0 now (PHASE_2_3_ADVANCED_STRATEGY.md section 9).
 
 Player knobs come from `opponents/profile.ts` with shrinkage: each moves by (posterior − prior) × d / (d + 20), so 20 opportunities count half. New statistics in 0.8.0: `foldToCheckRaise`, `foldVsRaise`, `reraiseVsRaise`.
 
 ### 9.3 Limits
 
-Two streets, not the whole hand; discrete sizes; hand-set thresholds; the opponent's strength on the next board is measured inside its starting range (the reach weights carry the narrowing); next-street choices are made on the same deals they are valued on, which slightly favours lines that reach the next street; heads-up only. About 60 ms per decision at 400 deals (median), 100 ms at the 95th percentile, in the simulator.
+Two streets, not the whole hand; discrete sizes; hand-set thresholds; the opponent's strength on the next board is measured inside its starting range (the reach weights carry the narrowing); next-street choices are made on the same deals they are valued on, which favours lines with later choices (measured in `sim/bot/v3-bias.ts`; the cross-fitting option removes most of it but picks worse actions, so it is off); heads-up only; against version 2's own model as opponent it still raises far too often (section 9 of the Phase 2.3 document). About 60 ms per decision at 400 deals (median), 100 ms at the 95th percentile, in the simulator.

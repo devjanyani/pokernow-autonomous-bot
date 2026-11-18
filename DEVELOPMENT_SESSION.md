@@ -1,29 +1,31 @@
 # Development session log
 
-Phase 2.3 (cash-game strategy) started on 2026-11-17 from commit `6ee2128` (v0.7.0, branch `autonomous-bot`).
-The previous session's log (v0.7.0: dashboard, tracking audit, Phase 2.2 instruments) is in git history at `6ee2128`.
+Phase 2.3 (cash-game strategy) ran from 2026-11-17 to 2026-11-18, starting from commit `6ee2128` (v0.7.0, branch
+`autonomous-bot`). The previous session's log (v0.7.0) is in git history at `6ee2128`.
 
-## Current state (checkpoint)
+## Current state (checkpoint, v0.8.0)
 
-- **Done and pushed (`1be2aee`):** experimental v3 postflop engine (`src/bot/strategy/v3/`), history-conditional
-  opponent model with profile knobs, three new profile statistics, agent wiring with fallback to v2, tests.
-- **Done, not yet committed:** model-uncertainty mixture in v3; v2 bet-size rounding fix at small stakes (cents
-  below 2 chips per big blind); benchmark harness `sim/bot/phase23-bench.ts`; raise-heavy `raiser` opponent;
-  cash-session analysis `sim/bot/cash-session.ts`; solver comparison with independent ranges
-  `sim/bot/solver-spots.ts` and inner-node analysis in `sim/bot/river-reference.ts`; reference evaluator for any
-  engine pair (`--engines v3,v2`); STRATEGY.md section 9.
-- **Running:** `phase23-bench.ts` seed 12100 (17 tables, v1/v2/v3/ml, 2,000 hands); reference evaluation v3 vs v2
-  on hu-tag, hu-lag, hu-trapper (seed 12500).
-- **Cash bundle used:** the 2026-11-18T04:35 export (nine-handed 0.25/0.50, ante 0.25). The 2026-11-18T02:28
-  export is a tournament (rising blinds) and is not used for anything.
+- **Finished and pushed:** experimental version 3 postflop engine (`src/bot/strategy/v3/`) with a history-conditional
+  opponent model, a model-uncertainty mixture, and the raise fold-shift fix; three new profile statistics; the v2
+  bet-size rounding fix at small stakes; the Phase 2.3 tools (`sim/bot/phase23-bench.ts`, `phase23-report.ts`,
+  `cash-session.ts`, `solver-spots.ts`, `v3-bias.ts`, `v3-latency.ts`, reference evaluation for any engine pair).
+- **Decision:** version 3 is **not** activated and not offered in the extension. It was not better than version 2 on
+  the held-out seed (heads-up pooled −10.3 ± 11.9 bb/100, significantly behind at three tables, significantly ahead
+  at none). The default stays version 2. Evidence: `reports/PHASE_2_3_BENCHMARK.md`; account and reasoning:
+  `docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md`.
+- **Cash bundle used:** the 2026-11-18T04:35 export (nine-handed 0.25/0.50, ante 0.25), analysed in
+  `reports/cash-session-2026-11-18.md` (anonymised). The 2026-11-18T02:28 export is a tournament and was not used.
 
 ## To resume
 
-1. If the benchmark did not finish: `npx tsx sim/bot/phase23-bench.ts --engines v1,v2,v3,ml --hands 2000 --seed 12100 --tables <remaining>`.
-2. Write `docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md` and `reports/PHASE_2_3_BENCHMARK.md` from the results.
-3. Decide on integration (Stage 10) from the evidence; the default stays v2 unless the evidence supports otherwise.
+1. `git pull private autonomous-bot`; `npm install` if needed; `npm test`.
+2. The next strategy step is the open defect in version 3 (over-raising against version 2's own model, never folding
+   to a condensed river bet). Start from `docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md` section 11. Calibrate fold-to-raise
+   responses from data rather than by hand. Re-test on a fresh seed (12500 and up are used for reference
+   evaluation; use 12700 or higher for the benchmark).
+3. More cash-game recordings are the main missing input: no player has 30 postflop opportunities of any statistic.
 
 ## Rules kept
 
 No autonomous clicking; recommend-only testing; nothing uploaded; no dataset downloaded; tournament data not used for
-cash-game priors; raw bundles never committed.
+cash-game priors; raw bundles never committed; outcomes never used as decision labels.

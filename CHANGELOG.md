@@ -2,6 +2,16 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.8.0 (2026-11-18)
+Phase 2.3, cash-game strategy. Default engine unchanged (version 2). Accounts: `docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md`, `reports/PHASE_2_3_BENCHMARK.md`.
+- New (offline, not offered in the extension): version 3 postflop engine, `engine: 'v3'`. A best response over the betting tree of the current and next street, built with the rules engine (check-raises, re-raises, call-then-raise, delayed bets). Opponent responses depend on the betting so far, ranges are updated by exact reach weights, and Hero decides against a mixture of opponent models. Heads-up pots only; everything else falls back to version 2 with the reason stated.
+- Measured: version 3 is not better than version 2. Held-out seed 12300, 13 heads-up tables: −10.3 ± 11.9 bb/100; significantly behind at three tables, ahead at none. Solver spots: 0.24 ± 0.08 against 0.22 ± 0.07 bb per decision. Hence not activated.
+- Fixed (version 3, found by the benchmark): the opponent model counted the strength of a raising range twice and folded too much to raises (check-raised 78% against a nit).
+- Fixed (version 2): bet sizes were whole chips, so at 0.25 / 0.50 the 33 / 66 / 100% sizes collapsed into one. Now in cents below two chips per big blind.
+- New profile statistics: fold to a check-raise, fold when raised, re-raise when raised (opportunity-based, shrunk).
+- New tools: `sim/bot/phase23-bench.ts` (+ `phase23-report.ts`), `cash-session.ts`, `solver-spots.ts`, `v3-bias.ts`, `v3-latency.ts`; reference evaluation for any engine pair; inner-node analysis in the river solver; a raise-heavy benchmark opponent.
+- Cash recording 2026-11-18 analysed (anonymised report). Too few postflop opportunities to calibrate anything; the tournament recording was not used.
+
 ## v0.7.0 (2026-11-16)
 Interface, tracking audit, first part of Phase 2.2. No strategy behaviour changed. Accounts: `docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md`, `docs/bot/PHASE_2_2_REPORT.md`, `docs/bot/STORAGE.md`.
 - New: Tables tab. Search, nickname, last seen, hands, frames, log lines, authorisation. Revoke authorisation and delete history are separate; remove stale authorisations; remove all inactive tables; optional export first. The open table is never included.

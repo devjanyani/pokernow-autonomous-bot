@@ -1,10 +1,25 @@
 # Project progress
 
-Last updated: 2026-11-16. Branch `autonomous-bot`. Version 0.7.0.
+Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.0.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-16, version 0.7.0)
+## Checkpoint (2026-11-18, version 0.8.0)
+
+- Branch `autonomous-bot`, version 0.8.0, pushed to remote `private`. `dist/` is built at 0.8.0.
+- Done in this version: Phase 2.3 (cash-game strategy). The work: an experimental version 3 postflop engine that plans
+  betting sequences over two streets; opponent statistics for check-raises and raises; analysis of the 2026-11-18
+  cash recording; a solver comparison with independent ranges; a held-out benchmark of versions 1, 2, 3 and the
+  PokerBench model.
+- **Version 3 is not activated.** It was not better than version 2 (held-out seed, heads-up pooled −10.3 ± 11.9
+  bb/100; significantly behind at three tables, ahead at none). The default is still version 2; Settings still offers
+  versions 1 and 2 only. One behaviour change reaches the extension: version 2's bet sizes are now in cents at
+  stakes below two chips per big blind (before, at 0.25/0.50, the 33/66/100% sizes collapsed into one).
+- Tracking, interface, storage, action recognition and permissions: unchanged.
+- Accounts: [PHASE_2_3_ADVANCED_STRATEGY.md](docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md), [reports/PHASE_2_3_BENCHMARK.md](reports/PHASE_2_3_BENCHMARK.md), [reports/cash-session-2026-11-18.md](reports/cash-session-2026-11-18.md).
+- To resume: see `DEVELOPMENT_SESSION.md`.
+
+## Previous checkpoint (2026-11-16, version 0.7.0)
 
 - Branch `autonomous-bot`, version 0.7.0, pushed to remote `private`. `dist/` is built at 0.7.0.
 - Done in this version: dashboard, popup and history management; the audit of the 2026-11-16 recording with seven tracking fixes; the first part of Phase 2.2 (measuring instruments and their results).
@@ -16,7 +31,9 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 
 ## Where things stand
 
-**0.7.0 (latest): interface, tracking audit, Phase 2.2 instruments.** Three pieces of work, details in "Version 0.7.0" below. In one paragraph: the dashboard and popup were rebuilt with a table manager and scoped deletion; the long recording showed that the large loss was real, that the positive total left out the largest losses, and seven defects in tracking, all fixed with tests on the recorded frames; and three new instruments (true-policy reference evaluation, independent opponents, a validated river solver reference) show that version 2 is ahead of version 1 against opponents that punish betting, behind against opponents that fold, and too passive on the river when nothing has been bet. **Neither engine is claimed to be stronger.**
+**0.8.0 (latest): Phase 2.3, cash-game strategy.** An experimental engine (version 3) searches betting sequences: check-raises, re-raises, calling now and raising later. It plays against an opponent model that depends on the betting so far and allows for its own uncertainty. It works as designed, but it was not better than version 2 in a held-out benchmark, so it stays offline. The default is unchanged. Details: [PHASE_2_3_ADVANCED_STRATEGY.md](docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md).
+
+**0.7.0: interface, tracking audit, Phase 2.2 instruments.** Three pieces of work, details in "Version 0.7.0" below. In one paragraph: the dashboard and popup were rebuilt with a table manager and scoped deletion; the long recording showed that the large loss was real, that the positive total left out the largest losses, and seven defects in tracking, all fixed with tests on the recorded frames; and three new instruments (true-policy reference evaluation, independent opponents, a validated river solver reference) show that version 2 is ahead of version 1 against opponents that punish betting, behind against opponents that fold, and too passive on the river when nothing has been bet. **Neither engine is claimed to be stronger.**
 
 **0.6.1: strategy diagnosis.** The benchmark that earlier notes called "not completed" did complete; it was verified and is committed. It and the follow-up experiments show that the 0.6.0 engine (v2) beats the 0.5.1 engine (v1) in no simulated setting and is significantly behind in several. The cause is the postflop engine: v2 bets far less often and folds more to flop bets. One mathematical defect (standard errors taken from the wrong scenario) was confirmed and fixed; it is not the cause. **No strategy is claimed to be stronger.** Details in "Version 0.6.1" below.
 

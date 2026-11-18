@@ -34,12 +34,17 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
 
 /** HEURISTIC population assumptions of the version 3 model (not measured; see the header). */
 export const MODEL3 = {
-  /** Continue threshold added when facing a check-raise (a check-raising range is strong). */
-  checkRaiseShift: 0.06,
-  /** Continue threshold added when a player's own bet or raise is raised. */
-  raisedShift: 0.04,
-  /** Continue threshold added at the third raise or more of a street. */
-  reraiseShift: 0.08,
+  /**
+   * Continue threshold added when facing a check-raise, when a player's own bet or raise is raised, and at the third
+   * raise or more of a street. All 0 since 0.8.0: the strength of a raising range is already in the deal weights
+   * (each deal carries the probability that the raiser plays that way), so an extra threshold counted it twice and
+   * made the opponent fold too much to raises. With 0.06 / 0.04 / 0.08 version 3 check-raised 78% of its chances
+   * against the nit and lost to version 2 by 55 ± 41 bb/100 there; reference evaluation found its river raises worse
+   * than folding (reports/PHASE_2_3_BENCHMARK.md). A player's own foldToCheckRaise / foldVsRaise still move them.
+   */
+  checkRaiseShift: 0,
+  raisedShift: 0,
+  reraiseShift: 0,
   /** Raise probability multiplier when facing a raise (re-raising needs more) and at the third raise or more. */
   reraiseMult: 0.6,
   thirdRaiseMult: 0.3,
