@@ -60,5 +60,5 @@ export interface Decision {
   spot?: SpotInfo;
   /** 'lower' when the decision is out-of-distribution or rests mainly on the heuristic fold model. */
   confidence?: 'normal' | 'lower';
-  engine?: 'v2';
+  engine?: 'v2' | 'v3';
 }

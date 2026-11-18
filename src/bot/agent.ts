@@ -16,6 +16,8 @@ import { applyHandToProfiles, PlayerProfile } from './opponents/profile';
 import { decidePreflop } from './strategy/preflop';
 import { PostflopSolver, PostflopResult } from './strategy/postflop';
 import { PostflopSolverV1 } from './strategy/postflop-v1';
+import { knobsFor } from './strategy/v3/model';
+import { PostflopSearchV3, V3Detail } from './strategy/v3/search';
 import { analyseSpot, describeSpot, SpotInfo } from './strategy/spot';
 import { Candidate, Decision } from './strategy/types';
 import { buildTable, FeatureCache } from './strategy/villains';
@@ -34,7 +36,7 @@ export interface AgentOptions {
    * 'v2' (default): two-round look-ahead with betting-lead roles. 'v1': the engine as it was at
    * version 0.5.1, kept only as the benchmark baseline.
    */
-  engine?: 'v1' | 'v2';
+  engine?: 'v1' | 'v2' | 'v3';
   /**
    * BENCHMARK ONLY (sim/bot/strategy-diag.ts): choose the engine separately for preflop decisions and for
    * postflop decisions, to measure the two sets of changes apart. Each overrides `engine` for its streets.
@@ -43,8 +45,10 @@ export interface AgentOptions {
    * preflop ranges for the opponents) while deciding on the flop, turn and river.
    * The extension never sets these.
    */
-  preflopEngine?: 'v1' | 'v2';
-  postflopEngine?: 'v1' | 'v2';
+  preflopEngine?: 'v1' | 'v2' | 'v3';
+  postflopEngine?: 'v1' | 'v2' | 'v3';
+  /** Version 3: also evaluate the chosen action under two other opponent models (three times the evaluation work). Default true. */
+  v3Sensitivity?: boolean;
 }
 
 export interface DecideOptions {
@@ -73,9 +77,10 @@ export class BotAgent {
   private readonly exploitWeight: number;
   private readonly seed: number;
   private readonly now: () => number;
-  private readonly engine: 'v1' | 'v2';
-  private readonly preflopEngine: 'v1' | 'v2';
-  private readonly postflopEngine: 'v1' | 'v2';
+  private readonly engine: 'v1' | 'v2' | 'v3';
+  private readonly preflopEngine: 'v1' | 'v2' | 'v3';
+  private readonly postflopEngine: 'v1' | 'v2' | 'v3';
+  private readonly v3Sensitivity: boolean;
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
@@ -83,6 +88,7 @@ export class BotAgent {
     this.engine = opts.engine ?? 'v2';
     this.preflopEngine = opts.preflopEngine ?? this.engine;
     this.postflopEngine = opts.postflopEngine ?? this.engine;
+    this.v3Sensitivity = opts.v3Sensitivity ?? true;
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
@@ -173,6 +179,20 @@ export class BotAgent {
     }, t0);
   }
 
+  /**
+   * Version 3 applies to heads-up pots after the flop. Elsewhere the agent uses version 2 and says why.
+   * Returns the search, or the reason it was not used.
+   */
+  private newSearchV3(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>): PostflopSearchV3 | string {
+    if (this.postflopEngine !== 'v3') return 'not selected';
+    if (prep.villains.length !== 1) return `${prep.villains.length} opponents in the pot: version 3 searches heads-up pots only`;
+    const v = prep.villains[0];
+    const seed = prep.rng.int(1 << 30);
+    try {
+      return new PostflopSearchV3(h, heroSeat, heroCards, v, knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight), this.cache.get(h.board), seed, prep.heroPerceived);
+    } catch (e) { return `search not built: ${(e as Error).message}`; }
+  }
+
   private newSolver(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>): PostflopSolver | PostflopSolverV1 {
     const seed = prep.rng.int(1 << 30);
     return prep.legacy ? new PostflopSolverV1(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), seed)
@@ -232,12 +252,56 @@ export class BotAgent {
     }, t0);
   }
 
+  private decisionV3(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, search: PostflopSearchV3, provisional: boolean, t0: number, final = true): Decision {
+    const res = search.result(2.5, final);
+    let r = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, 7)).next();
+    let chosen = res.best;
+    for (let i = 0; i < res.candidates.length; i++) { r -= res.candidates[i].freq; if (r < 0) { chosen = i; break; } }
+    const d: V3Detail = res.v3;
+    const chips = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+    const pct = (x: number) => `${(100 * x).toFixed(0)}%`;
+    const pick = res.candidates[chosen], line = res.lines[chosen];
+    const basis = [
+      `calculated approximation (version 3, experimental): best response to the opponent model over a betting tree of ${d.nodes} nodes (this street${search.cfg.streets === 2 && h.street !== 'river' ? ' and the next' : ''}), ${d.deals} sampled deals; Hero may check-raise, re-raise, or call now and bet or raise later`,
+      "heuristic: the opponent's range comes from the range-aware behaviour model; its responses depend on the betting so far (strategy/v3/model.ts), not on a solver",
+    ];
+    const plan = d.plans[chosen];
+    if (plan.length) basis.push(`plan after ${pick.label}: ${plan.join('; ')}`);
+    const dec = d.decomposition[chosen];
+    if (dec && (pick.action === 'bet' || pick.action === 'raise')) {
+      const eqc = line.equityWhenCalled;
+      basis.push(`modelled responses: all fold ${pct(line.foldAll)}, call ${pct(line.called)}, raise ${pct(line.raised)}${eqc === null ? '' : `; Hero wins ${pct(eqc)} at showdown against the hands that call`}`);
+      const purpose = dec.fromFolds > Math.max(dec.fromCalls, 0) && (eqc ?? 0) < 0.4 ? 'mainly fold equity (bluff or semi-bluff)'
+        : dec.fromCalls > 0 && dec.fromFolds > 0 ? 'value when called and fold equity together' : dec.fromCalls > 0 ? 'value: profit comes from being called' : 'none of the responses is profitable on its own';
+      basis.push(`where the value comes from: folds ${chips(dec.fromFolds)}, calls ${chips(dec.fromCalls)}, raises ${chips(dec.fromRaises)} chips → ${purpose}`);
+    }
+    if (d.checkOptions) {
+      for (const co of d.checkOptions) {
+        const best = co.options.slice().sort((a, b) => b.ev - a.ev)[0];
+        basis.push(`after a check, ${co.nextStreet ? `on the ${co.street} ` : ''}if the opponent bets ${co.facing.replace(/^bet /, '')} (${pct(co.probability)} of deals): ${co.options.map((o) => `${o.label} ${chips(o.ev)}`).join(', ')}; plan: ${co.chosen ?? best.label}${best.purpose ? ` — ${best.purpose}` : ''}`);
+      }
+    }
+    for (const s of d.sensitivity) basis.push(`opponent-model sensitivity: if the opponent ${s.scenario}, the chosen action is worth ${chips(s.evOfChosen)} chips and the best would be "${s.best}" (${chips(s.evBest)})`);
+    const ev = search.cfg;
+    void ev;
+    const dd = this.finish(h, heroSeat, prep, res.candidates, chosen, {
+      equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional,
+      lowConfidence: (pick.action === 'bet' || pick.action === 'raise') && (line.equityWhenCalled === null || line.equityWhenCalled < 0.33),
+    }, t0);
+    const knobs = knobsFor(this.profiles.get(prep.villains[0].playerId), prep.villains[0].tend, this.exploitWeight);
+    for (const e of knobs.evidence) dd.adjustments.push(`learned (version 3): ${prep.villains[0].name}: ${e}`);
+    return { ...dd, engine: 'v3' };
+  }
+
   /** Fully synchronous decision with a fixed sample count (simulator, tests). */
   decideSync(h: HandState, heroSeat: number, heroCards: [CardId, CardId], samples = 600): Decision {
     const t0 = this.now();
     const prep = this.prepare(h, heroSeat, heroCards);
     if (h.street === 'preflop') return this.preflop(h, heroSeat, heroCards, prep, t0);
+    const v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
+    if (typeof v3 !== 'string') { v3.run(samples); return this.decisionV3(h, heroSeat, prep, v3, false, t0, this.v3Sensitivity); }
     const solver = this.newSolver(h, heroSeat, heroCards, prep);
+    if (this.postflopEngine === 'v3') { solver.run(samples); const d = this.postflopDecision(h, heroSeat, prep, solver, false, t0); d.basis.push(`version 3 not used: ${v3}; version 2 decided`); return d; }
     solver.run(samples);
     return this.postflopDecision(h, heroSeat, prep, solver, false, t0);
   }
@@ -256,7 +320,10 @@ export class BotAgent {
       opts.onProgress?.(d);
       return d;
     }
+    const v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
+    if (typeof v3 !== 'string') return this.decideV3(h, heroSeat, prep, v3, opts, t0);
     const solver = this.newSolver(h, heroSeat, heroCards, prep);
+    const fallbackNote = this.postflopEngine === 'v3' ? `version 3 not used: ${v3}; version 2 decided` : null;
     const pot = potTotal(h);
     const budget = planBudget({
       timeRemainingMs: opts.timeRemainingMs ?? null, street: h.street, potBB: pot / h.bigBlind,
@@ -275,10 +342,39 @@ export class BotAgent {
       const stop = shouldStop(budget, { elapsedMs: this.now() - t0, samples: res.samples, separated: res.separated, evGap: res.evGap, evGapSe: res.evGapSe, potChips: pot });
       if (first || stop.stop) {
         const d = this.postflopDecision(h, heroSeat, prep, solver, !stop.stop, t0);
+        if (fallbackNote) d.basis.push(fallbackNote);
         if (stop.stop) { d.basis.push(`time: stopped after ${res.samples} samples (${stop.reason}); budget soft ${budget.softMs.toFixed(0)}ms / hard ${budget.hardMs.toFixed(0)}ms, importance ${budget.importance.toFixed(2)}`); opts.onProgress?.(d); return d; }
         opts.onProgress?.(d);
         first = false;
       }
+      if (opts.yieldFn) { await opts.yieldFn(); if (cancelled()) throw new DecisionCancelled(); }
+    }
+  }
+
+  /** Anytime loop for version 3: deals are added in batches; the tree is re-evaluated after each batch. */
+  private async decideV3(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, search: PostflopSearchV3, opts: DecideOptions, t0: number): Promise<Decision> {
+    const cancelled = opts.isCancelled ?? (() => false);
+    const pot = potTotal(h);
+    if (opts.fixedSamples) { search.run(opts.fixedSamples); return this.decisionV3(h, heroSeat, prep, search, false, t0); }
+    const budget = planBudget({
+      timeRemainingMs: opts.timeRemainingMs ?? null, street: h.street, potBB: pot / h.bigBlind, effStackBB: effectiveStack(h, heroSeat) / h.bigBlind,
+      opponents: 1, candidates: search.specs.length, stateConfidence: opts.stateConfidence ?? 1, jitterMs: opts.jitterMs,
+    });
+    // The tree is re-evaluated after every batch, so batches are larger than version 2's.
+    const batch = Math.max(100, Math.min(400, budget.batch));
+    let first = true;
+    for (;;) {
+      search.run(first ? 100 : batch);
+      if (cancelled()) throw new DecisionCancelled();
+      const res = search.result(2.5, false);
+      const stop = shouldStop(budget, { elapsedMs: this.now() - t0, samples: res.samples, separated: res.separated, evGap: res.evGap, evGapSe: res.evGapSe, potChips: pot });
+      if (stop.stop || res.samples >= 2400) {
+        const d = this.decisionV3(h, heroSeat, prep, search, false, t0, this.v3Sensitivity);
+        d.basis.push(`time: stopped after ${res.samples} deals (${stop.stop ? stop.reason : 'deal cap'}); budget soft ${budget.softMs.toFixed(0)}ms / hard ${budget.hardMs.toFixed(0)}ms`);
+        opts.onProgress?.(d);
+        return d;
+      }
+      if (first) { opts.onProgress?.(this.decisionV3(h, heroSeat, prep, search, true, t0, false)); first = false; }
       if (opts.yieldFn) { await opts.yieldFn(); if (cancelled()) throw new DecisionCancelled(); }
     }
   }

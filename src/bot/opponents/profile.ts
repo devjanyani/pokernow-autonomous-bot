@@ -24,6 +24,8 @@ export const STAT_KEYS = [
   'betWhenCheckedToFlop', 'betWhenCheckedToTurn', 'betWhenCheckedToRiver',
   'foldVsBetHeadsUp', 'foldVsBetMultiway',
   'vpipEarly', 'vpipLate', 'vpipBlinds', 'rfiEarly', 'rfiLate', 'rfiBlinds',
+  // 0.8.0: responses to raises after the flop.
+  'foldToCheckRaise', 'foldVsRaise', 'reraiseVsRaise',
 ] as const;
 export type StatKey = typeof STAT_KEYS[number];
 
@@ -41,6 +43,7 @@ export const PRIORS: Record<StatKey, { mean: number; k: number }> = {
   foldVsBetHeadsUp: { mean: 0.45, k: 10 }, foldVsBetMultiway: { mean: 0.52, k: 10 },
   vpipEarly: { mean: 0.17, k: 12 }, vpipLate: { mean: 0.32, k: 12 }, vpipBlinds: { mean: 0.3, k: 12 },
   rfiEarly: { mean: 0.14, k: 12 }, rfiLate: { mean: 0.35, k: 12 }, rfiBlinds: { mean: 0.35, k: 12 },
+  foldToCheckRaise: { mean: 0.45, k: 10 }, foldVsRaise: { mean: 0.45, k: 10 }, reraiseVsRaise: { mean: 0.08, k: 12 },
 };
 
 export const SIZE_BUCKETS = ['<40% pot', '40-70%', '70-110%', '>110%'] as const;
@@ -175,6 +178,9 @@ export function extractHandDeltas(h: HandState, reveals: Map<number, [CardId, Ca
     const boardLen = street === 'flop' ? 3 : street === 'turn' ? 4 : 5;
     let bets = 0, cbetMade = false, cbetSeat: number | null = null;
     const checked = new Set<number>(), respondedToCbet = new Set<number>();
+    // Seats that bet or raised on this street, and the seat whose bet was just check-raised.
+    const aggressed = new Set<number>();
+    let checkRaisedSeat: number | null = null, lastAggSeat: number | null = null;
     let live = dealt.filter((s) => !h.events.some((e) => e.seq < evs[0].seq && e.seat === s.seat && e.kind === 'fold')).length;
     for (const e of evs) {
       const facing = e.facing > 1e-9;
@@ -190,6 +196,14 @@ export function extractHandDeltas(h: HandState, reveals: Map<number, [CardId, Ca
         bump(e.seat, `callVsBet${S}` as StatKey, e.kind === 'call');
         bump(e.seat, `raiseVsBet${S}` as StatKey, e.kind === 'raise');
         bump(e.seat, live <= 2 ? 'foldVsBetHeadsUp' : 'foldVsBetMultiway', e.kind === 'fold');
+        // Facing a raise of its own bet or raise.
+        if (aggressed.has(e.seat) && bets >= 2) {
+          bump(e.seat, 'foldVsRaise', e.kind === 'fold');
+          bump(e.seat, 'reraiseVsRaise', e.kind === 'raise');
+          if (checkRaisedSeat === e.seat) bump(e.seat, 'foldToCheckRaise', e.kind === 'fold');
+        }
+        if (e.kind === 'raise' && checked.has(e.seat) && lastAggSeat !== null) checkRaisedSeat = lastAggSeat;
+        else if (checkRaisedSeat === e.seat) checkRaisedSeat = null;
         if (checked.has(e.seat)) { bump(e.seat, 'checkRaise', e.kind === 'raise'); checked.delete(e.seat); }
         if (cbetMade && bets === 1 && e.seat !== cbetSeat && !respondedToCbet.has(e.seat) && (street === 'flop' || street === 'turn')) {
           respondedToCbet.add(e.seat);
@@ -210,7 +224,7 @@ export function extractHandDeltas(h: HandState, reveals: Map<number, [CardId, Ca
           if (pct >= 0) { d.shownSum[b] += pct; d.shownN[b]++; }
         }
       }
-      if (isAgg(e)) bets++;
+      if (isAgg(e)) { bets++; aggressed.add(e.seat); lastAggSeat = e.seat; }
       if (e.kind === 'fold') live--;
     }
     prevStreetCbet = street === 'flop' && cbetMade;
