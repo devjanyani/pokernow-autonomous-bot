@@ -47,6 +47,15 @@ export const MODEL3 = {
   largeShare: 0.45,
   /** Opportunities at which a player's own statistic counts half. */
   halfWeightAt: 20,
+  /**
+   * Share of deals in which the opponent is NOT the modelled one but one of two plausible deviations (stickier,
+   * or more aggressive), before any evidence about the player. It shrinks as the player's own responses to bets
+   * are observed: uncertainty x halfWeightAt / (halfWeightAt + opportunities).
+   */
+  uncertainty: 0.4,
+  /** The two deviations: stickiness added (folds less), and aggression added with raising doubled. */
+  stickierBy: 0.4,
+  aggressiveBy: 0.6,
 };
 
 /** Player-specific knobs on top of version 2's tendencies. 1 / 0 = population assumption. */
@@ -64,11 +73,23 @@ export interface Knobs {
   largeShare: number;
   /** Plain statements of what moved and on what evidence. Empty = population assumptions only. */
   evidence: string[];
+  /** The player's observed responses to bets after the flop (opportunities), for the model-uncertainty weight. */
+  observed: number;
 }
 
 export const defaultKnobs = (tend: Tendencies): Knobs => ({
-  tend, raiseMult: 1, checkRaiseShift: MODEL3.checkRaiseShift, raisedShift: MODEL3.raisedShift, barrelMult: 1, riverBetMult: 1, largeShare: MODEL3.largeShare, evidence: [],
+  tend, raiseMult: 1, checkRaiseShift: MODEL3.checkRaiseShift, raisedShift: MODEL3.raisedShift, barrelMult: 1, riverBetMult: 1, largeShare: MODEL3.largeShare, evidence: [], observed: 0,
 });
+
+/** The modelled opponent and the two deviations Hero cannot rule out, with their weights. */
+export function opponentMixture(k: Knobs, uncertainty = MODEL3.uncertainty): { knobs: Knobs; weight: number; name: string }[] {
+  const a = uncertainty * MODEL3.halfWeightAt / (MODEL3.halfWeightAt + k.observed);
+  return [
+    { knobs: k, weight: 1 - a, name: 'as modelled' },
+    { knobs: { ...k, tend: { ...k.tend, stickiness: k.tend.stickiness + MODEL3.stickierBy } }, weight: a / 2, name: 'folds less (stickier)' },
+    { knobs: { ...k, raiseMult: k.raiseMult * 2, tend: { ...k.tend, aggression: k.tend.aggression + MODEL3.aggressiveBy } }, weight: a / 2, name: 'bets and raises more' },
+  ];
+}
 
 /**
  * Knobs from a player's profile. Each statistic moves its knob by (observed - prior) scaled by d / (d + halfWeightAt),
@@ -78,6 +99,7 @@ export const defaultKnobs = (tend: Tendencies): Knobs => ({
 export function knobsFor(p: PlayerProfile | undefined, tend: Tendencies, exploitWeight = 1): Knobs {
   const k = defaultKnobs(tend);
   if (!p || exploitWeight <= 0) return k;
+  k.observed = p.stats.foldVsBetFlop.d + p.stats.foldVsBetTurn.d + p.stats.foldVsBetRiver.d;
   const w = (d: number) => exploitWeight * d / (d + MODEL3.halfWeightAt);
   const stat = (key: StatKey) => { const q = posterior(p, key); return { q, prior: PRIORS[key].mean, wt: w(q.d) }; };
   const note = (name: string, key: StatKey, from: string, to: string) => { const q = posterior(p, key); k.evidence.push(`${name}: ${to} (was ${from}) from ${q.n} of ${q.d} observed, estimate ${(100 * q.mean).toFixed(0)}%`); };

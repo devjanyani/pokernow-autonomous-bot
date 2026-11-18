@@ -111,3 +111,42 @@ describe('river solver: card removal and facing a bet', () => {
     for (let i = 0; i < 6; i++) expect(Math.abs(chk.actionValues[call][i] - chk.actionValues[fold][i])).toBeLessThan(1e-6);
   });
 });
+
+describe('inner-node analysis (check, then a bet faced)', () => {
+  it('at the root it agrees with the root analysis; after check and bet, calling is worth exactly the showdown against the betting range', async () => {
+    const { nodeAnalysis } = await import('../../sim/bot/river-reference');
+    const { evaluateHand } = await import('../../src/core/equity/hand-eval');
+    const spec: RiverSpec = {
+      board: ['Kh', '9d', '5s', '2c', '7h'].map(c),
+      hero: [...combos('A', 'K'), ...combos('Q', 'Q'), ...combos('8', '7'), ...combos('6', '4')].filter((h) => !h.cards.includes(c('Kh'))),
+      villain: [...combos('K', 'Q'), ...combos('A', 'A'), ...combos('J', 'T'), ...combos('9', '8')].filter((h) => !h.cards.includes(c('Kh')) && !h.cards.includes(c('9d'))),
+      pot: 100, stack: 300, toCall: 0, heroIsIP: false, betFractions: [0.75], raiseFractions: [0.75],
+    };
+    const sol = solveRiver(spec, { maxIterations: 800 });
+    const root = nodeAnalysis(sol, spec, []);
+    const chk = independentCheck(sol, spec);
+    for (let a = 0; a < root.values.length; a++) for (let i = 0; i < root.values[a].length; i++) {
+      if (Number.isFinite(chk.actionValues[a][i])) expect(root.values[a][i]).toBeCloseTo(chk.actionValues[a][i], 6);
+    }
+    const x = sol.solver.root.actions.findIndex((q) => q.kind === 'check');
+    const afterX = sol.solver.root.children[x];
+    const bi = afterX.actions.findIndex((q) => q.kind === 'bet');
+    const na = nodeAnalysis(sol, spec, [sol.solver.root.actions[x].label, afterX.actions[bi].label]);
+    const call = na.kinds.indexOf('call');
+    const b = afterX.actions[bi].chips;
+    const H = sol.solver.hands[0], V = sol.solver.hands[1];
+    for (let i = 0; i < H.length; i++) {
+      let s = 0, m = 0;
+      const hr = evaluateHand([...H[i], ...spec.board]);
+      for (let j = 0; j < V.length; j++) {
+        if (H[i].some((q) => V[j].includes(q))) continue;
+        const vr = evaluateHand([...V[j], ...spec.board]);
+        const share = hr > vr ? 1 : hr === vr ? 0.5 : 0;
+        s += na.villainReach[j] * (share * (spec.pot + 2 * b) - b); m += na.villainReach[j];
+      }
+      if (m > 0) expect(na.values[call][i]).toBeCloseTo(s / m, 6);
+    }
+    expect(na.kinds).toContain('fold');
+    expect(na.kinds.some((k) => k === 'raise' || k === 'allin')).toBe(true);
+  });
+});

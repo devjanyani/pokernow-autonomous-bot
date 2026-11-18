@@ -8,8 +8,8 @@ import { strengthTable } from '../../src/bot/ranges/range-model';
 import { removeDead } from '../../src/bot/ranges/range';
 import { archetypePolicy } from '../../src/bot/sim/policies';
 import { playSession } from '../../src/bot/sim/table';
-import { bet3, defaultKnobs, knobsFor, respond3 } from '../../src/bot/strategy/v3/model';
-import { PostflopSearchV3, TNode } from '../../src/bot/strategy/v3/search';
+import { bet3, defaultKnobs, knobsFor, opponentMixture, respond3 } from '../../src/bot/strategy/v3/model';
+import { DEFAULT_V3, PostflopSearchV3, TNode } from '../../src/bot/strategy/v3/search';
 import type { VillainModel } from '../../src/bot/strategy/villains';
 import { dealBoard, legalActions, potTotal, seatOf } from '../../src/bot/table/engine';
 import { botPolicy } from '../../src/bot/sim/policies';
@@ -68,6 +68,20 @@ describe('version 3 opponent model: responses depend on the betting so far', () 
   });
 });
 
+describe('model uncertainty', () => {
+  it('decisions are a best response to a mixture of opponents whose deviation share shrinks with evidence', () => {
+    const none = opponentMixture(defaultKnobs(NEUTRAL));
+    expect(none.map((m) => m.weight)).toEqual([0.6, 0.2, 0.2].map((x) => expect.closeTo(x, 9)));
+    expect(none[1].knobs.tend.stickiness).toBeGreaterThan(0);
+    expect(none[2].knobs.raiseMult).toBe(2);
+    const p = emptyProfile('z');
+    p.stats.foldVsBetFlop = { n: 60, d: 120 }; p.stats.foldVsBetTurn = { n: 30, d: 60 };
+    const seen = opponentMixture(knobsFor(p, NEUTRAL));
+    expect(seen[0].weight).toBeGreaterThan(0.95);
+    expect(opponentMixture(defaultKnobs(NEUTRAL), 0)[0].weight).toBe(1);
+  });
+});
+
 describe('new profile statistics', () => {
   it('fold to a check-raise, fold and re-raise when raised are counted with their opportunities', () => {
     const h = mk(2, { stacks: [2000, 2000] });         // seat 0 button / small blind, seat 1 big blind
@@ -114,7 +128,7 @@ describe('version 3 betting tree', () => {
     const range = new Float64Array(1326); range[comboIndex(c('Qc'), c('Qd'))] = 1;          // Hero always wins
     const f = computeFeatures(b.h.board);
     const knobs = { ...defaultKnobs(NEUTRAL), raiseMult: 0 };                              // the opponent never raises
-    const search = new PostflopSearchV3(b.h, b.heroSeat, b.heroCards, villainOf(b.h, opp, range), knobs, f, 3, undefined);
+    const search = new PostflopSearchV3(b.h, b.heroSeat, b.heroCards, villainOf(b.h, opp, range), knobs, f, 3, undefined, { ...DEFAULT_V3, modelUncertainty: 0 });
     search.run(40);
     const res = search.result(2.5, false);
     const pot = potTotal(b.h);
@@ -199,3 +213,22 @@ function validLegal(b: ReturnType<typeof flopSpot>, d: { action: string; to?: nu
   if (d.action === 'call') return la.canCall;
   return la.canRaise && d.to! >= la.minRaiseTo - 1e-9 && d.to! <= la.maxRaiseTo + 1e-9;
 }
+
+describe('bet sizes at small stakes (both engines)', () => {
+  it('at 0.25 / 0.50 the candidate sizes are distinct and in cents, not whole chips', () => {
+    const h = mk(2, { stacks: [100, 100], sb: 0.25, bb: 0.5 });
+    act(h, 'call'); act(h, 'check');
+    dealBoard(h, [c('Kh'), c('9d'), c('5s')]);
+    const hero = h.toAct!;
+    const opp = h.seats.find((s) => s.seat !== hero)!.seat;
+    const range = removeDead(new Float64Array(1326).fill(1), [c('7c'), c('6c'), ...h.board]);
+    const v2 = new BotAgent({ seed: 1, engine: 'v2' }).decideSync(h, hero, [c('7c'), c('6c')], 60);
+    const bets2 = v2.candidates.filter((x) => x.action === 'bet').map((x) => x.to!);
+    expect(bets2.length).toBeGreaterThanOrEqual(4);                 // pot of 1 chip: 0.33, 0.66, 1.0, 1.5 must not collapse
+    expect(new Set(bets2).size).toBe(bets2.length);
+    expect(bets2.some((x) => Math.round(x) !== x)).toBe(true);
+    const s3 = new PostflopSearchV3(h, hero, [c('7c'), c('6c')], villainOf(h as never, opp, range), defaultKnobs(NEUTRAL), computeFeatures(h.board), 1, undefined);
+    const bets3 = s3.specs.filter((x) => x.action === 'bet').map((x) => x.to);
+    expect(bets3).toEqual(bets2);
+  });
+});

@@ -286,7 +286,10 @@ export class PostflopSolver {
     const fracs = facing ? [0.55, 1.0] : [0.33, 0.66, 1.0, 1.5];
     const tos: number[] = [];
     for (const f of fracs) {
-      let to = Math.round((facing ? h.currentBet : hero.streetCommit) + f * base);
+      // Whole chips at stakes of 2 or more per big blind; cents below (at 0.25 / 0.50 a whole chip is 2 big blinds,
+      // which made the three smaller sizes collapse into one in small pots).
+      const raw = (facing ? h.currentBet : hero.streetCommit) + f * base;
+      let to = h.bigBlind >= 2 ? Math.round(raw) : Math.round(raw * 100) / 100;
       to = clamp(to, la.minRaiseTo, cap);
       if (to >= 0.75 * cap) to = cap;
       tos.push(to);

@@ -57,7 +57,7 @@ import { realizationFactor, sizeLabel } from '../postflop';
 import { betRole, leadSeatFor } from '../spot';
 import type { Candidate } from '../types';
 import type { VillainModel } from '../villains';
-import { bet3, Ctx3, Knobs, respond3 } from './model';
+import { bet3, Ctx3, Knobs, MODEL3, opponentMixture, respond3 } from './model';
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 const EPS = 1e-9;
@@ -72,8 +72,10 @@ export interface SearchConfig {
   heroBuckets: number;
   /** Safety cap on the number of tree nodes. */
   maxNodes: number;
+  /** Model uncertainty before evidence (model.ts MODEL3.uncertainty); 0 = trust the model fully. */
+  modelUncertainty: number;
 }
-export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000 };
+export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000, modelUncertainty: MODEL3.uncertainty };
 
 /** HEURISTIC discrete sizes (fractions of the pot; raises: of the pot after calling). */
 export const SIZES3 = {
@@ -139,6 +141,9 @@ export class PostflopSearchV3 {
   private s1 = new Float32Array(0);
   private hb = new Uint8Array(0);
   private out = new Uint8Array(0);
+  /** Which opponent (0 modelled, 1 stickier, 2 more aggressive) the deal is played against. Hero never sees it. */
+  private typ = new Uint8Array(0);
+  private readonly mix: { knobs: Knobs; weight: number; name: string }[];
   private approx = 0;
   private readonly bucketCuts: number[];
   /** Hero's made-hand percentile and draw outs on the current board (to say whether a raise is a semi-bluff). */
@@ -177,6 +182,7 @@ export class PostflopSearchV3 {
     this.sampler = new MultiwayDealSampler(heroCards, h.board.slice(), [toWeighted(villain.range, [...heroCards, ...h.board]).range], seed);
     this.hand = [heroCards[0], heroCards[1], ...h.board, 0, 0].slice(0, 7);
     this.vhand = [0, 0, ...h.board, 0, 0].slice(0, 7);
+    this.mix = opponentMixture(knobs, cfg.modelUncertainty);
     this.bucketCuts = cfg.heroBuckets <= 1 ? [] : Array.from({ length: cfg.heroBuckets - 1 }, (_, i) => 0.35 + (0.45 * (i + 1)) / cfg.heroBuckets);
 
     // ---- tree ----
@@ -230,7 +236,7 @@ export class PostflopSearchV3 {
         const out: number[] = [];
         for (const f of fracs) {
           // Whole chips at stakes of 2 or more per big blind, cents below (PokerNow tables at 0.25 / 0.50 use cents).
-          let to = Math.round((from + f * base) / unit) * unit;
+          let to = unit === 1 ? Math.round(from + f * base) : Math.round((from + f * base) * 100) / 100;
           to = clamp(to, la.minRaiseTo, capTo);
           if (to >= 0.75 * capTo) to = capTo;
           out.push(to);
@@ -303,7 +309,7 @@ export class PostflopSearchV3 {
     const cap = Math.max(need, 2 * this.cap, 256);
     const g = <T extends Float32Array | Uint8Array>(a: T, mk: (n: number) => T): T => { const b = mk(cap); b.set(a); return b; };
     this.s0 = g(this.s0, (n) => new Float32Array(n)); this.s1 = g(this.s1, (n) => new Float32Array(n));
-    this.hb = g(this.hb, (n) => new Uint8Array(n)); this.out = g(this.out, (n) => new Uint8Array(n));
+    this.hb = g(this.hb, (n) => new Uint8Array(n)); this.out = g(this.out, (n) => new Uint8Array(n)); this.typ = g(this.typ, (n) => new Uint8Array(n));
     this.cap = cap;
   }
 
@@ -329,7 +335,8 @@ export class PostflopSearchV3 {
         while (bucket < this.bucketCuts.length && nf.hero >= this.bucketCuts[bucket]) bucket++;
         this.hb[i] = bucket;
       } else { this.s1[i] = this.s0[i]; this.hb[i] = 0; }
-      void this.rng;
+      const u = this.rng.next();
+      this.typ[i] = u < this.mix[0].weight ? 0 : u < this.mix[0].weight + this.mix[1].weight ? 1 : 2;
     }
   }
 
@@ -338,7 +345,8 @@ export class PostflopSearchV3 {
   // ---- evaluation ----------------------------------------------------------------------------
 
   /** Model probabilities of each act at an opponent node for one deal. */
-  private oppProbs(node: TNode, d: number, k: Knobs, out: Float64Array): void {
+  private oppProbs(node: TNode, d: number, force: Knobs | null, out: Float64Array): void {
+    const k = force ?? this.mix[this.typ[d]].knobs;
     const s = node.depth === 0 ? this.s0[d] : this.s1[d];
     const c = node.ctx!;
     let r: Record<string, number>;
@@ -360,7 +368,7 @@ export class PostflopSearchV3 {
   }
 
   /** Backward induction for the deals so far under knobs k. Returns the value vector of `node`. */
-  private evalNode(node: TNode, reach: Float64Array, k: Knobs, record: boolean): Float64Array {
+  private evalNode(node: TNode, reach: Float64Array, k: Knobs | null, record: boolean): Float64Array {
     const N = this.n;
     const V = new Float64Array(N);
     if (record) { let r = 0; for (let d = 0; d < N; d++) r += reach[d]; node.reach = r; }
@@ -394,7 +402,7 @@ export class PostflopSearchV3 {
   }
 
   /** Root candidate value vectors (one per root action) under knobs k. */
-  private rootValues(k: Knobs, record: boolean): Float64Array[] {
+  private rootValues(k: Knobs | null, record: boolean): Float64Array[] {
     const N = this.n, reach = new Float64Array(N).fill(1);
     return this.root.kids.map((kid) => this.evalNode(kid, reach, k, record));
   }
@@ -406,7 +414,7 @@ export class PostflopSearchV3 {
     const tmp = new Float64Array(A);
     let callW = 0, callEq = 0, contW = 0, contEq = 0;
     for (let d = 0; d < N; d++) {
-      this.oppProbs(kid, d, this.knobs, tmp);
+      this.oppProbs(kid, d, null, tmp);
       for (let a = 0; a < A; a++) probs[a] += tmp[a];
       const sh = OUTCOME_SHARE[this.out[d]];
       if (kid.facing) { const pc = tmp[1]; callW += pc; callEq += pc * sh; const pk = 1 - tmp[0]; contW += pk; contEq += pk * sh; }
@@ -441,7 +449,7 @@ export class PostflopSearchV3 {
 
   result(z = 2.5, scenarios = true): PostflopResult & { v3: V3Detail } {
     const N = Math.max(1, this.n);
-    const vals = this.rootValues(this.knobs, true);
+    const vals = this.rootValues(null, true);
     const K = vals.length;
     const ev = vals.map((v) => v.reduce((a, b) => a + b, 0) / N);
     const variance = (v: Float64Array, m: number) => v.reduce((a, b) => a + (b - m) * (b - m), 0) / N;
@@ -463,7 +471,7 @@ export class PostflopSearchV3 {
 
     // Line statistics in version 2's format, plus version 3's plans and decompositions.
     const lines: LineStats[] = [];
-    const detail: V3Detail = { nodes: this.nodes, deals: this.n, plans: [], decomposition: [], checkOptions: null, sensitivity: [] };
+    const detail: V3Detail = { nodes: this.nodes, deals: this.n, plans: [], decomposition: [], checkOptions: null, sensitivity: [], mixture: this.mix.map((m) => ({ name: m.name, weight: m.weight })) };
     for (let c = 0; c < K; c++) {
       const kid = this.root.kids[c], sp = this.specs[c];
       const st: LineStats = { foldAll: 0, raised: 0, called: 0, equityWhenCalled: null, betBehind: 0, plan: null };
@@ -488,17 +496,14 @@ export class PostflopSearchV3 {
 
     // Sensitivity: the same deals and tree under two other opponents.
     if (scenarios) {
-      const alt: [string, Knobs][] = [
-        ['folds less (stickier)', { ...this.knobs, tend: { ...this.knobs.tend, stickiness: this.knobs.tend.stickiness + 0.4 } }],
-        ['bets and raises more', { ...this.knobs, raiseMult: this.knobs.raiseMult * 2, tend: { ...this.knobs.tend, aggression: this.knobs.tend.aggression + 0.6 } }],
-      ];
+      const alt: [string, Knobs][] = this.mix.map((m) => [m.name, m.knobs]);
       for (const [name, kk] of alt) {
         const v = this.rootValues(kk, false).map((x) => x.reduce((a, b) => a + b, 0) / N);
         let b2 = 0;
         for (let c = 1; c < K; c++) if (v[c] > v[b2]) b2 = c;
         detail.sensitivity.push({ scenario: name, evOfChosen: v[best], best: this.specs[b2].label, evBest: v[b2] });
       }
-      this.rootValues(this.knobs, true); // restore recorded choices for the model scenario
+      this.rootValues(null, true); // restore the recorded choices of the decision itself
     }
 
     const m = Array.from(this.out.subarray(0, this.n)).reduce((a, o) => a + OUTCOME_SHARE[o], 0) / N;
@@ -529,8 +534,8 @@ export class PostflopSearchV3 {
     const parts = new Array<number>(A).fill(0);
     const tmp = new Float64Array(A);
     const reach = new Float64Array(N).fill(1);
-    const Vk = kid.kids.map((c, a) => { const cr = new Float64Array(N); for (let d = 0; d < N; d++) { this.oppProbs(kid, d, this.knobs, tmp); cr[d] = reach[d] * tmp[a]; } return this.evalNode(c, cr, this.knobs, false); });
-    for (let d = 0; d < N; d++) { this.oppProbs(kid, d, this.knobs, tmp); for (let a = 0; a < A; a++) parts[a] += tmp[a] * Vk[a][d]; }
+    const Vk = kid.kids.map((c, a) => { const cr = new Float64Array(N); for (let d = 0; d < N; d++) { this.oppProbs(kid, d, null, tmp); cr[d] = reach[d] * tmp[a]; } return this.evalNode(c, cr, null, false); });
+    for (let d = 0; d < N; d++) { this.oppProbs(kid, d, null, tmp); for (let a = 0; a < A; a++) parts[a] += tmp[a] * Vk[a][d]; }
     void total;
     return parts.map((p) => p / Math.max(1, N));
   }
@@ -546,10 +551,10 @@ export class PostflopSearchV3 {
       if (bet.kind === 'check' || hn.type !== 'hero') continue;
       const reach = new Float64Array(N);
       let mass = 0;
-      for (let d = 0; d < N; d++) { this.oppProbs(kid, d, this.knobs, tmp); reach[d] = tmp[a]; mass += tmp[a]; }
+      for (let d = 0; d < N; d++) { this.oppProbs(kid, d, null, tmp); reach[d] = tmp[a]; mass += tmp[a]; }
       if (mass <= 1e-9) continue;
       const opts = hn.acts.map((x, j) => {
-        const v = this.evalNode(hn.kids[j], reach, this.knobs, false);
+        const v = this.evalNode(hn.kids[j], reach, null, false);
         let s = 0; for (let d = 0; d < N; d++) s += reach[d] * v[d];
         let purpose: string | null = null;
         if (x.kind === 'raise') {
@@ -558,7 +563,7 @@ export class PostflopSearchV3 {
           if (vn.type === 'opp') {
             const t2 = new Float64Array(vn.acts.length);
             let cw = 0, ce = 0, fw = 0;
-            for (let d = 0; d < N; d++) { if (!reach[d]) continue; this.oppProbs(vn, d, this.knobs, t2); fw += reach[d] * t2[0]; const pc = reach[d] * (1 - t2[0]); cw += pc; ce += pc * OUTCOME_SHARE[this.out[d]]; }
+            for (let d = 0; d < N; d++) { if (!reach[d]) continue; this.oppProbs(vn, d, null, t2); fw += reach[d] * t2[0]; const pc = reach[d] * (1 - t2[0]); cw += pc; ce += pc * OUTCOME_SHARE[this.out[d]]; }
             const eqc = cw > 0 ? ce / cw : 0, foldShare = fw / mass;
             // A hand whose equity comes mostly from cards still to come is a semi-bluff whatever its equity.
             const drawing = this.board.length < 5 && this.heroOuts >= 8 && this.heroHs < 0.6;
@@ -600,6 +605,8 @@ export interface V3Detail {
   decomposition: ({ fromFolds: number; fromCalls: number; fromRaises: number; eqContinue: number | null } | null)[];
   /** When checking is possible: Hero's options after each opponent bet. */
   checkOptions: CheckOption[] | null;
-  /** The chosen action under two other opponent models (same deals). */
+  /** The chosen action under each opponent of the mixture on its own (same deals). */
   sensitivity: { scenario: string; evOfChosen: number; best: string; evBest: number }[];
+  /** The opponents Hero's decision is a best response to, with their weights. */
+  mixture: { name: string; weight: number }[];
 }

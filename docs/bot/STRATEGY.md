@@ -218,3 +218,36 @@ Known limits of this method: one more street, not the whole tree; one bet size f
 ### 8.5 Preflop
 
 Section 5 still describes the order of checks. Changes: chart lookups go through the library and cite the pack, its verification status and every departure from its assumptions; the big blind over limpers uses the chart's raising hands; the width of a raise Hero faces is the width of the range modelled for the raiser's actual line, not the first-in width of the raiser's seat.
+
+## 9. Version 3 (0.8.0, experimental, off by default): search over betting sequences
+
+Selected with Settings → Strategy experiments → Version 3, or `engine: 'v3'`. It replaces version 2 only in heads-up pots after the flop; preflop decisions and pots with two or more opponents are version 2, and the explanation says so. Full account, audit and measurements: [PHASE_2_3_ADVANCED_STRATEGY.md](PHASE_2_3_ADVANCED_STRATEGY.md).
+
+### 9.1 What it computes (`strategy/v3/search.ts`), a calculated approximation
+
+1. **Public tree.** The current street and the next street are expanded with the rules engine itself, so minimum raises, the re-open rule, all-ins and uncalled bets are the game's own rules. Discrete sizes: Hero's first action uses version 2's sizes (bets of 33/66/100/150% of the pot and all-in when the stack is short; raises of 55 and 100% of the pot after calling); later Hero raises are about 45% and 90% of the pot after calling, plus all-in; the opponent bets 33% or 75% of the pot and raises about pot. At most four bets and raises on the current street and three on the next. Sizes are whole chips at stakes of two or more chips per big blind and cents below.
+2. **Deals.** The opponent's holding is sampled from version 2's range estimate (section 8.2) with the rest of the board. Its strength on this street and on the next board, and the showdown result, are computed once per deal.
+3. **Opponent nodes** follow the history-conditional model of 9.2 with the strength of the holding dealt. Each deal carries the probability that the opponent took every action on the path (its reach), so the opponent's range after any line is exactly the holdings that the model plays that way.
+4. **Hero nodes.** Hero takes the action with the highest reach-weighted value over the deals that reach the node: on the current street one choice per node, on the next street one per node and per strength bucket of Hero's hand on the new card (four buckets). Hero never conditions on the opponent's cards. This is a best response to the opponent model on this tree.
+5. **Leaves.** Fold: exact. River or all-in showdown: exact, with side pots. End of the next street with a card still to come: the showdown share times the realization factor of section 6.
+6. **Model uncertainty.** Each deal also draws which opponent Hero faces: the modelled one, a stickier one (stickiness +0.4) or a more aggressive one (aggression +0.6, raises doubled). Before any evidence the two deviations have 20% each; their share falls as the opponent's own responses to bets are observed (×20 / (20 + opportunities)). Hero cannot tell them apart, so its choices are a best response to the mixture. This replaces version 2's "score every bet by the lower of two values".
+
+Reported for the chosen action: the plan (what Hero does if raised; after a check, what Hero does against each bet size, called a check-raise when it is a raise); for bets, the value contributed by folds, calls and raises; for checks, the value of every answer to each bet size and the purpose of a check-raise computed from the equity against the hands that continue and the share that folds (value, protection or thin value, semi-bluff when the hand's equity comes from a draw, bluff); the value of the chosen action against each opponent of the mixture on its own; and every opponent knob that moved, with its evidence.
+
+### 9.2 Opponent model (`strategy/v3/model.ts`), heuristic
+
+Version 2's functions (section 8.3) with thresholds that depend on the betting so far:
+
+| The opponent faces | Continue threshold | Raise probability |
+|---|---|---|
+| a bet | version 2 | version 2 × the player's raise tendency |
+| a raise of its own bet | + 0.04 (`foldVsRaise` evidence moves it) | × 0.6 |
+| a check-raise | + 0.06 (`foldToCheckRaise` evidence moves it) | × 0.6 |
+| a third raise or more | + 0.08 more | × 0.3 |
+| may bet first | version 2 bet probability, × turn-barrel tendency when it holds the lead, × river-bet tendency on the river | bet size: the larger size with the player's own large-bet share (prior 45%), a little more often with the strongest and weakest holdings |
+
+Player knobs come from `opponents/profile.ts` with shrinkage: each moves by (posterior − prior) × d / (d + 20), so 20 opportunities count half. New statistics in 0.8.0: `foldToCheckRaise`, `foldVsRaise`, `reraiseVsRaise`.
+
+### 9.3 Limits
+
+Two streets, not the whole hand; discrete sizes; hand-set thresholds; the opponent's strength on the next board is measured inside its starting range (the reach weights carry the narrowing); next-street choices are made on the same deals they are valued on, which slightly favours lines that reach the next street; heads-up only. About 60 ms per decision at 400 deals (median), 100 ms at the 95th percentile, in the simulator.

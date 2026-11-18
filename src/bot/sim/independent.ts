@@ -204,7 +204,28 @@ export function adaptivePunisherPolicy(samples = 160): Policy {
   };
 }
 
+/**
+ * Raises bets a lot: with its best hands for value and with some of its weakest as bluffs, and checks back
+ * middling hands. Tests whether a bettor folds too much to raises or pays them off too lightly.
+ */
+export function raiserPolicy(samples = 160): Policy {
+  return {
+    name: 'raiser',
+    act(v) {
+      if (v.h.street === 'preflop') return preflop(v, { open: 0.22, openSize: 3, call: 0.3, threeBet: 0.09, fourBet: 0.025, defendBB: 0.55 });
+      const opp = liveOpponents(v.h);
+      const s = standing(rawEquity(v, samples), opp);
+      const u = v.rng.next();
+      if (v.la.canCheck) return (s > 0.78 && u < 0.7) || (s < 0.2 && u < 0.35) ? wager(v, betTo(v, 0.6), { kind: 'check' }) : { kind: 'check' };
+      const price = v.la.callAmount / (potTotal(v.h) + v.la.callAmount);
+      if (s > 0.72 || (opp === 1 && s < 0.25 && u < 0.3)) return wager(v, raiseTo(v, 1), s > 0.72 ? { kind: 'call' } : { kind: 'fold' });
+      return s >= 0.35 + 0.5 * price ? passive(v) : { kind: 'fold' };
+    },
+  };
+}
+
 export const INDEPENDENT_FACTORIES: Record<string, () => Policy> = {
+  raiser: () => raiserPolicy(),
   'pot-odds-caller': () => potOddsCallerPolicy(),
   'mdf-defender': () => mdfDefenderPolicy(),
   trapper: () => trapperPolicy(),

@@ -180,3 +180,49 @@ export function independentCheck(sol: RiverSolution, spec: RiverSpec): RiverChec
   }
   return { exploitChips, maxValueDiff, heroValues, actionValues, actionProbs };
 }
+
+export interface NodeAnalysis {
+  /** Hero's actions at the node. */
+  labels: string[];
+  kinds: string[];
+  chips: number[];
+  /** Per action, per Hero hand: value of taking the action and then best-responding to the solution's villain, conditional on reaching the node. */
+  values: Float64Array[];
+  /** Per action, per Hero hand: the solution's probability. */
+  probs: Float64Array[];
+  /** Weights of the villain's hands at the node (its range there under the solution), and of Hero's hands (Hero's range there). */
+  villainReach: Float64Array;
+  heroReach: Float64Array;
+}
+
+/**
+ * The same quantities as independentCheck's root analysis, at an inner Hero node reached by the action labels in
+ * `path` (e.g. ['X', 'B75'] = Hero checked, villain bet 75%). The villain's range at the node is its starting range
+ * times the solution's probability of every villain action on the path; Hero's values are conditional on that range.
+ */
+export function nodeAnalysis(sol: RiverSolution, spec: RiverSpec, path: string[]): NodeAnalysis {
+  const { solver } = sol;
+  const t = tables(spec, solver.hands as [[number, number][], [number, number][]]);
+  const nv = t.n[1], nh = t.n[0];
+  const rv = Float64Array.from(solver.weights[1]), rh = Float64Array.from(solver.weights[0]);
+  let node = solver.root;
+  for (const label of path) {
+    const a = node.actions.findIndex((x) => x.label === label);
+    if (a < 0) throw new Error(`no action ${label} at ${node.line} (have ${node.actions.map((x) => x.label).join(',')})`);
+    const avg = solver.averageStrategy(node);
+    if (node.player === 1) for (let j = 0; j < nv; j++) rv[j] *= avg[a * nv + j];
+    else for (let i = 0; i < nh; i++) rh[i] *= avg[a * nh + i];
+    node = node.children[a];
+  }
+  if (node.kind !== 'decision' || node.player !== 0) throw new Error('the path does not end at a Hero decision');
+  const mass = new Float64Array(nh);
+  for (let i = 0; i < nh; i++) { let s = 0; for (let j = 0; j < nv; j++) if (t.compat[0][i * nv + j]) s += rv[j]; mass[i] = s; }
+  const avg = solver.averageStrategy(node);
+  const values: Float64Array[] = [], probs: Float64Array[] = [];
+  node.actions.forEach((_, a) => {
+    const cv = walk(solver, t, node.children[a], 0, rv, 'br');
+    values.push(Float64Array.from(cv, (v, i) => (mass[i] > 0 ? v / mass[i] : NaN)));
+    probs.push(Float64Array.from({ length: nh }, (_, i) => avg[a * nh + i]));
+  });
+  return { labels: node.actions.map((x) => x.label), kinds: node.actions.map((x) => x.kind), chips: node.actions.map((x) => x.chips), values, probs, villainReach: rv, heroReach: rh };
+}

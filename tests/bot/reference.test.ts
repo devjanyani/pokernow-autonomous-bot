@@ -131,7 +131,7 @@ describe('reference evaluator: hidden information stays in the simulator', () =>
 
 describe('independent benchmark opponents', () => {
   it('are registered, and none is built on the bot\'s behaviour models', () => {
-    expect(Object.keys(INDEPENDENT_FACTORIES).sort()).toEqual(['adaptive-punisher', 'maniac', 'mdf-defender', 'nit', 'pot-odds-caller', 'trapper']);
+    expect(Object.keys(INDEPENDENT_FACTORIES).sort()).toEqual(['adaptive-punisher', 'maniac', 'mdf-defender', 'nit', 'pot-odds-caller', 'raiser', 'trapper']);
     for (const k of Object.keys(INDEPENDENT_FACTORIES)) expect(POLICY_FACTORIES[k]).toBeDefined();
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'bot', 'sim', 'independent.ts'), 'utf8');
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);

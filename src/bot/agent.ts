@@ -281,7 +281,8 @@ export class BotAgent {
         basis.push(`after a check, ${co.nextStreet ? `on the ${co.street} ` : ''}if the opponent bets ${co.facing.replace(/^bet /, '')} (${pct(co.probability)} of deals): ${co.options.map((o) => `${o.label} ${chips(o.ev)}`).join(', ')}; plan: ${co.chosen ?? best.label}${best.purpose ? ` — ${best.purpose}` : ''}`);
       }
     }
-    for (const s of d.sensitivity) basis.push(`opponent-model sensitivity: if the opponent ${s.scenario}, the chosen action is worth ${chips(s.evOfChosen)} chips and the best would be "${s.best}" (${chips(s.evBest)})`);
+    basis.push(`model uncertainty: decided against a mixture of opponents Hero cannot tell apart: ${d.mixture.map((m) => `${pct(m.weight)} ${m.name}`).join(', ')} (the share of the two deviations shrinks as this opponent's own responses are observed)`);
+    for (const s of d.sensitivity) basis.push(`opponent-model sensitivity: if the opponent ${s.scenario === 'as modelled' ? 'plays exactly as modelled' : s.scenario}, the chosen action is worth ${chips(s.evOfChosen)} chips and the best would be "${s.best}" (${chips(s.evBest)})`);
     const ev = search.cfg;
     void ev;
     const dd = this.finish(h, heroSeat, prep, res.candidates, chosen, {
