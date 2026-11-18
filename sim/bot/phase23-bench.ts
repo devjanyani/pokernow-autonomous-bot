@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     const row = `| ${t} | ${h} | ${engines.map((e) => fmt(bb100(r[e]!.perDeal))).join(' | ')} | ${cell(d('v3', 'v2'))} | ${cell(d('v3', 'v1'))} |${engines.includes('ml') ? ` ${cell(d('ml', 'v2'))} |` : ''} ${st((s) => pct(s.bet, s.free))} | ${st((s) => pct(s.fold, s.facing))} | ${st((s) => `${pct(s.xr, s.xrChance)} of ${s.xrChance}`)} | ${v3ms} |`;
     console.log(row);
     lines.push(row);
-    if (json) fs.appendFileSync(json, JSON.stringify({ table: t, field, hands: h, seed, samples, results: Object.fromEntries(engines.map((e) => [e, { ...bb100(r[e]!.perDeal), stats: { ...r[e]!.stats, ms: undefined, msMedian: q(r[e]!.stats.ms, 0.5), msP95: q(r[e]!.stats.ms, 0.95) }, seconds: r[e]!.seconds }])), diffs: { v3v2: d('v3', 'v2'), v3v1: d('v3', 'v1'), mlv2: d('ml', 'v2') } }) + '\n');
+    if (json) fs.appendFileSync(json, JSON.stringify({ table: t, field, hands: h, seed, samples, results: Object.fromEntries(engines.map((e) => [e, { ...bb100(r[e]!.perDeal), perDeal: r[e]!.perDeal.map((x) => Math.round(x * 1e4) / 1e4), stats: { ...r[e]!.stats, ms: undefined, msMedian: q(r[e]!.stats.ms, 0.5), msP95: q(r[e]!.stats.ms, 0.95) }, seconds: r[e]!.seconds }])), diffs: { v3v2: d('v3', 'v2'), v3v1: d('v3', 'v1'), mlv2: d('ml', 'v2') } }) + '\n');
     if (out) fs.writeFileSync(out, lines.join('\n') + '\n');
   }
 }

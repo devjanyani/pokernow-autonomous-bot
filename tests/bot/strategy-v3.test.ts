@@ -232,3 +232,15 @@ describe('bet sizes at small stakes (both engines)', () => {
     expect(bets3).toEqual(bets2);
   });
 });
+
+describe('selection bias option', () => {
+  it('cross-fitting changes nothing when every deal is the same (river, one opponent holding)', () => {
+    const b = buildSpot({ players: 6, hero: 'BB', cards: 'Ah Ad', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Ks 7d 2c: BB x, BTN x', '9h: BB x, BTN x', '3s:'] });
+    const opp = b.h.seats.find((s) => s.dealtIn && !s.folded && s.seat !== b.heroSeat)!.seat;
+    const range = new Float64Array(1326); range[comboIndex(c('Qc'), c('Qd'))] = 1;
+    const run = (crossFit: boolean) => { const s = new PostflopSearchV3(b.h, b.heroSeat, b.heroCards, villainOf(b.h, opp, range), defaultKnobs(NEUTRAL), computeFeatures(b.h.board), 3, undefined, { ...DEFAULT_V3, modelUncertainty: 0, crossFit }); s.run(50); return s.result(2.5, false).candidates.map((x) => x.ev); };
+    const a = run(false), x = run(true);
+    a.forEach((v, i) => expect(x[i]).toBeCloseTo(v!, 9));
+    expect(DEFAULT_V3.crossFit).toBe(false);
+  });
+});

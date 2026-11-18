@@ -74,8 +74,14 @@ export interface SearchConfig {
   maxNodes: number;
   /** Model uncertainty before evidence (model.ts MODEL3.uncertainty); 0 = trust the model fully. */
   modelUncertainty: number;
+  /**
+   * Choose Hero's actions below the root on one half of the deals and value them on the other. Removes the upward
+   * selection bias of the values but makes the choices noisier: in sim/bot/v3-bias.ts it picked the action that a
+   * 12,000-deal run picks less often (91 of 96 trials against 95 of 96), so it is off by default.
+   */
+  crossFit: boolean;
 }
-export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000, modelUncertainty: MODEL3.uncertainty };
+export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000, modelUncertainty: MODEL3.uncertainty, crossFit: false };
 
 /** HEURISTIC discrete sizes (fractions of the pot; raises: of the pot after calling). */
 export const SIZES3 = {
@@ -368,7 +374,7 @@ export class PostflopSearchV3 {
   }
 
   /** Backward induction for the deals so far under knobs k. Returns the value vector of `node`. */
-  private evalNode(node: TNode, reach: Float64Array, k: Knobs | null, record: boolean): Float64Array {
+  private evalNode(node: TNode, reach: Float64Array, k: Knobs | null, record: boolean, isRoot = false): Float64Array {
     const N = this.n;
     const V = new Float64Array(N);
     if (record) { let r = 0; for (let d = 0; d < N; d++) r += reach[d]; node.reach = r; }
@@ -391,13 +397,31 @@ export class PostflopSearchV3 {
     // Hero: best action per information set (depth 0: the node; depth 1: the node and Hero's strength bucket).
     const kids = node.kids.map((kid) => this.evalNode(kid, reach, k, record));
     const B = node.depth === 0 ? 1 : this.cfg.heroBuckets;
-    const score = Array.from({ length: B }, () => new Float64Array(A));
-    for (let d = 0; d < N; d++) { const b = node.depth === 0 ? 0 : this.hb[d]; const r = reach[d]; if (r === 0) continue; for (let a = 0; a < A; a++) score[b][a] += r * kids[a][d]; }
+    // Scores per half of the deals (even / odd index) and per strength bucket.
+    const score = Array.from({ length: 2 * B }, () => new Float64Array(A));
+    const mass = new Float64Array(2 * B);
+    for (let d = 0; d < N; d++) {
+      const r = reach[d]; if (r === 0) continue;
+      const slot = 2 * (node.depth === 0 ? 0 : this.hb[d]) + (d & 1);
+      mass[slot] += r;
+      for (let a = 0; a < A; a++) score[slot][a] += r * kids[a][d];
+    }
     // Ties (e.g. a node no deal reaches) go to the first action that is not a fold.
     const start = Math.max(0, node.acts.findIndex((x) => x.kind !== 'fold'));
-    const choice = score.map((sc) => { let best = start; for (let a = 0; a < A; a++) if (sc[a] > sc[best] + 1e-12) best = a; return best; });
-    if (record) node.choice = choice;
-    for (let d = 0; d < N; d++) V[d] = kids[choice[node.depth === 0 ? 0 : this.hb[d]]][d];
+    const argmax = (sc: Float64Array) => { let best = start; for (let a = 0; a < A; a++) if (sc[a] > sc[best] + 1e-12) best = a; return best; };
+    const both = Array.from({ length: B }, (_, b) => { const sc = new Float64Array(A); for (let a = 0; a < A; a++) sc[a] = score[2 * b][a] + score[2 * b + 1][a]; return argmax(sc); });
+    if (record) node.choice = both;
+    // CROSS-FITTING. A choice made and valued on the same deals is biased upward (the best of several noisy means).
+    // Below the root, the action for each half of the deals is chosen on the OTHER half and valued on its own,
+    // so the value of a line reflects a choice Hero could have made without seeing these deals. A half that
+    // has no deals at the node uses the choice made on all deals.
+    const cross = this.cfg.crossFit && !isRoot;
+    for (let d = 0; d < N; d++) {
+      const b = node.depth === 0 ? 0 : this.hb[d];
+      const other = 2 * b + (1 - (d & 1));
+      const a = cross && mass[other] > 0 ? argmax(score[other]) : both[b];
+      V[d] = kids[a][d];
+    }
     return V;
   }
 
