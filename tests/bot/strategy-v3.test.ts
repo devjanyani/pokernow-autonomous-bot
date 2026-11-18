@@ -8,7 +8,7 @@ import { strengthTable } from '../../src/bot/ranges/range-model';
 import { removeDead } from '../../src/bot/ranges/range';
 import { archetypePolicy } from '../../src/bot/sim/policies';
 import { playSession } from '../../src/bot/sim/table';
-import { bet3, defaultKnobs, knobsFor, opponentMixture, respond3 } from '../../src/bot/strategy/v3/model';
+import { addCalib, bet3, CALIB_GRID, Calibration, CalibTally, defaultKnobs, knobsFor, opponentMixture, respond3, solveCalib } from '../../src/bot/strategy/v3/model';
 import { DEFAULT_V3, PostflopSearchV3, TNode } from '../../src/bot/strategy/v3/search';
 import type { VillainModel } from '../../src/bot/strategy/villains';
 import { dealBoard, legalActions, potTotal, seatOf } from '../../src/bot/table/engine';
@@ -48,25 +48,45 @@ describe('version 3 opponent model: responses depend on the betting so far', () 
     expect(respond3(0.97, { ...base, canRaise: false }, k).raise).toBe(0);
     expect(respond3(0.97, { ...base, level: 3, ownRaised: true }, k).raise).toBeLessThan(respond3(0.97, base, k).raise);
   });
-  it('a player who raises a lot, measured on enough hands, raises more in the model; three hands change nothing', () => {
+  it('raw frequencies of raising and folding to raises do not move the response knobs (they depend on Hero\'s own ranges)', () => {
     const p = emptyProfile('x');
-    p.stats.raiseVsBetFlop = { n: 3, d: 3 };
-    const few = knobsFor(p, NEUTRAL);
-    expect(few.raiseMult).toBeGreaterThan(1);
-    expect(few.raiseMult).toBeLessThan(1.6);
     p.stats.raiseVsBetFlop = { n: 30, d: 80 };
-    const many = knobsFor(p, NEUTRAL);
-    expect(many.raiseMult).toBeGreaterThan(few.raiseMult);
-    expect(many.evidence.join()).toMatch(/30 raises in 80 spots/);
+    p.stats.foldToCheckRaise = { n: 18, d: 20 };
+    p.stats.foldVsRaise = { n: 40, d: 50 };
+    const k = knobsFor(p, NEUTRAL);
+    expect(k.raiseMult).toBe(1);
+    expect(k.checkRaiseShift).toBe(0);
+    expect(k.raisedShift).toBe(0);
     expect(knobsFor(p, NEUTRAL, 0)).toEqual(defaultKnobs(NEUTRAL));            // exploit weight 0: population model only
     expect(knobsFor(undefined, NEUTRAL).evidence).toEqual([]);
   });
-  it('a player seen folding to check-raises folds more to one; bet sizes follow the player\'s own large-bet share', () => {
+  it('residual calibration: a knob moves only by the gap between observed responses and the model\'s own predictions', () => {
+    // A model whose predicted fold rate is 0.4 + shift (per opportunity), monotone over the grid.
+    const curve = (n: number) => CALIB_GRID.shift.map((g) => n * Math.min(1, Math.max(0, 0.4 + g)));
+    // Observed = predicted at shift 0: no movement, however many opportunities.
+    const same: CalibTally = { n: 200, observed: 80, predicted: curve(200) };
+    expect(solveCalib('foldVsRaise', same)).toBeCloseTo(0, 9);
+    // A player who folds 60% where the model predicts 40%: the knob moves toward +0.2, shrunk by 20 pseudo-opportunities.
+    const folds: CalibTally = { n: 200, observed: 120, predicted: curve(200) };
+    const v = solveCalib('foldVsRaise', folds);
+    expect(v).toBeGreaterThan(0.15);
+    expect(v).toBeLessThan(0.2);
+    // Three opportunities, all folds: barely moves.
+    expect(solveCalib('foldVsRaise', { n: 3, observed: 3, predicted: curve(3) })).toBeLessThan(0.1);
+    // In knobsFor, with the evidence stated and the exploit weight applied.
+    const k = knobsFor(emptyProfile('q'), NEUTRAL, 1, { foldVsRaise: folds });
+    expect(k.raisedShift).toBeCloseTo(v, 9);
+    expect(k.evidence.join()).toMatch(/120 folds in 200 of Hero's raises, where the model predicted 80\.0/);
+    expect(knobsFor(emptyProfile('q'), NEUTRAL, 0.5, { foldVsRaise: folds }).raisedShift).toBeCloseTo(v / 2, 9);
+    // addCalib accumulates.
+    const c: Calibration = {};
+    addCalib(c, 'raiseVsBet', [0.1, 0.2], true); addCalib(c, 'raiseVsBet', [0.1, 0.2], false);
+    expect(c.raiseVsBet).toEqual({ n: 2, observed: 1, predicted: [0.2, 0.4] });
+  });
+  it('bet sizes follow the player\'s own large-bet share', () => {
     const p = emptyProfile('y');
-    p.stats.foldToCheckRaise = { n: 18, d: 20 };
     p.betSizes = [2, 2, 20, 6];
     const kk = knobsFor(p, NEUTRAL);
-    expect(kk.checkRaiseShift).toBeGreaterThan(defaultKnobs(NEUTRAL).checkRaiseShift);
     expect(kk.largeShare).toBeGreaterThan(0.6);
     const b = bet3(0.9, { street: 'flop', role: 'aggressor', lateStreet: false }, kk);
     expect(b.large).toBeGreaterThan(b.small);
@@ -249,4 +269,23 @@ describe('selection bias option', () => {
     a.forEach((v, i) => expect(x[i]).toBeCloseTo(v!, 9));
     expect(DEFAULT_V3.crossFit).toBe(false);
   });
+});
+
+describe('residual calibration in the agent', () => {
+  it('version 3 records its own predictions at each bet or raise and the response that followed', async () => {
+    const hero = botPolicy({ seed: 5, engine: 'v3', samples: 120, v3Sensitivity: false });
+    await playSession({ players: [{ playerId: 'h', policy: hero }, { playerId: 'o', policy: archetypePolicy('loose-aggressive') }], hands: 60, seed: 5, smallBlind: 10, bigBlind: 20, startStack: 2000 });
+    const cal = hero.agent.v3Calibration.get('o');
+    expect(cal).toBeDefined();
+    const tallies = Object.entries(cal!);
+    expect(tallies.length).toBeGreaterThan(0);
+    for (const [key, t] of tallies) {
+      expect(t!.n).toBeGreaterThan(0);
+      expect(t!.observed).toBeLessThanOrEqual(t!.n);
+      expect(t!.predicted.length).toBe(key === 'raiseVsBet' ? CALIB_GRID.mult.length : CALIB_GRID.shift.length);
+      // Predictions are probabilities summed over opportunities, monotone in the knob.
+      for (let i = 1; i < t!.predicted.length; i++) expect(t!.predicted[i]).toBeGreaterThanOrEqual(t!.predicted[i - 1] - 1e-9);
+      expect(t!.predicted[t!.predicted.length - 1]).toBeLessThanOrEqual(t!.n + 1e-9);
+    }
+  }, 120000);
 });

@@ -1,10 +1,21 @@
 # Project progress
 
-Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.0.
+Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.1.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-18, version 0.8.0)
+## Checkpoint (2026-11-18, version 0.8.1)
+
+- Branch `autonomous-bot`, version 0.8.1, pushed to remote `private`. `dist/` is built at 0.8.1.
+- Done in this version: Phase 2.4. The cause of version 3's over-raising was found (learned knobs that counted
+  Hero's own range selection twice) and corrected (residual calibration). Also: a value-bias study, eight reference
+  fixtures, what the cash recording can calibrate (nothing about raises), and two fresh held-out benchmarks.
+- **Version 3 is still not activated**: it is now equal to version 2 on fresh seeds (−1.8 ± 10.1 and −0.6 ± 10.9
+  bb/100 heads-up pooled), not better. No behaviour change reaches the extension.
+- Accounts: [PHASE_2_4_MODEL_CALIBRATION.md](docs/bot/PHASE_2_4_MODEL_CALIBRATION.md), [reports/PHASE_2_4_BENCHMARK.md](reports/PHASE_2_4_BENCHMARK.md).
+- To resume: see `DEVELOPMENT_SESSION.md`.
+
+## Previous checkpoint (2026-11-18, version 0.8.0)
 
 - Branch `autonomous-bot`, version 0.8.0, pushed to remote `private`. `dist/` is built at 0.8.0.
 - Done in this version: Phase 2.3 (cash-game strategy). The work: an experimental version 3 postflop engine that plans
@@ -31,7 +42,9 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 
 ## Where things stand
 
-**0.8.0 (latest): Phase 2.3, cash-game strategy.** An experimental engine (version 3) searches betting sequences: check-raises, re-raises, calling now and raising later. It plays against an opponent model that depends on the betting so far and allows for its own uncertainty. It works as designed, but it was not better than version 2 in a held-out benchmark, so it stays offline. The default is unchanged. Details: [PHASE_2_3_ADVANCED_STRATEGY.md](docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md).
+**0.8.1 (latest): Phase 2.4.** Version 3's over-raising came from opponent knobs that read Hero's own range selection as a trait of the player; they are now calibrated against the model's own predictions. Version 3 is now level with version 2 on fresh seeds but not better, so it stays offline. Details: [PHASE_2_4_MODEL_CALIBRATION.md](docs/bot/PHASE_2_4_MODEL_CALIBRATION.md).
+
+**0.8.0: Phase 2.3, cash-game strategy.** An experimental engine (version 3) searches betting sequences: check-raises, re-raises, calling now and raising later. It plays against an opponent model that depends on the betting so far and allows for its own uncertainty. It works as designed, but it was not better than version 2 in a held-out benchmark, so it stays offline. The default is unchanged. Details: [PHASE_2_3_ADVANCED_STRATEGY.md](docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md).
 
 **0.7.0: interface, tracking audit, Phase 2.2 instruments.** Three pieces of work, details in "Version 0.7.0" below. In one paragraph: the dashboard and popup were rebuilt with a table manager and scoped deletion; the long recording showed that the large loss was real, that the positive total left out the largest losses, and seven defects in tracking, all fixed with tests on the recorded frames; and three new instruments (true-policy reference evaluation, independent opponents, a validated river solver reference) show that version 2 is ahead of version 1 against opponents that punish betting, behind against opponents that fold, and too passive on the river when nothing has been bet. **Neither engine is claimed to be stronger.**
 

@@ -57,7 +57,7 @@ import { realizationFactor, sizeLabel } from '../postflop';
 import { betRole, leadSeatFor } from '../spot';
 import type { Candidate } from '../types';
 import type { VillainModel } from '../villains';
-import { bet3, Ctx3, Knobs, MODEL3, opponentMixture, respond3 } from './model';
+import { bet3, CALIB_GRID, CALIB_KIND, CalibKey, Ctx3, Knobs, MODEL3, opponentMixture, respond3 } from './model';
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 const EPS = 1e-9;
@@ -80,8 +80,16 @@ export interface SearchConfig {
    * 12,000-deal run picks less often (91 of 96 trials against 95 of 96), so it is off by default.
    */
   crossFit: boolean;
+  /**
+   * HOLDOUT VALUATION (Phase 2.4): when k > 0, every k-th deal is held out. Hero's later choices are made on the other
+   * deals, and the root candidates are valued only on the held-out deals, which played no part in those choices.
+   * The values are then unbiased for the policy Hero will actually follow (unlike plain evaluation, where choice and
+   * value use the same deals), and the policy is the one chosen on most of the deals (unlike cross-fitting).
+   * 0 = off (plain).
+   */
+  holdoutEvery: number;
 }
-export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000, modelUncertainty: MODEL3.uncertainty, crossFit: false };
+export const DEFAULT_V3: SearchConfig = { streets: 2, maxAggCurrent: 4, maxAggNext: 3, heroBuckets: 4, maxNodes: 6000, modelUncertainty: MODEL3.uncertainty, crossFit: false, holdoutEvery: 0 };
 
 /** HEURISTIC discrete sizes (fractions of the pot; raises: of the pot after calling). */
 export const SIZES3 = {
@@ -348,6 +356,47 @@ export class PostflopSearchV3 {
 
   get samples(): number { return this.n; }
 
+  /**
+   * Residual calibration (model.ts CALIB_GRID): for root action `a`, which knob the opponent's response to it informs,
+   * and the response probability the as-modelled opponent gives over the sampled range at each grid value of that
+   * knob (fold probability for raises, raise probability for bets). Null when the opponent does not respond next.
+   */
+  calibCurve(a: number): { key: CalibKey; predicted: number[] } | null {
+    const node = this.root.kids[a];
+    if (!node || node.type !== 'opp' || !node.facing || this.n === 0) return null;
+    const c = node.ctx!;
+    const key: CalibKey = c.checkRaised ? 'foldToCheckRaise' : c.ownRaised ? 'foldVsRaise' : 'raiseVsBet';
+    if (key === 'raiseVsBet' && !c.canRaise) return null;
+    const base = this.mix[0].knobs;
+    const predicted = CALIB_GRID[CALIB_KIND[key]].map((g) => {
+      const k: Knobs = key === 'raiseVsBet' ? { ...base, raiseMult: g } : key === 'foldToCheckRaise' ? { ...base, checkRaiseShift: g } : { ...base, raisedShift: g };
+      let t = 0;
+      for (let d = 0; d < this.n; d++) { const r = respond3(this.s0[d], c, k); t += key === 'raiseVsBet' ? r.raise : r.fold; }
+      return t / this.n;
+    });
+    return { key, predicted };
+  }
+
+  /**
+   * Diagnostics: the model's response probabilities at the opponent node right after root action `a`, for one opponent
+   * holding (`combo`, mixture-averaged as Hero's decision sees it) and averaged over the sampled deals (the whole
+   * modelled range). Also the holding's weight in the range estimate relative to the range's largest weight.
+   * Null when the opponent does not act next. Read-only; no decision uses it.
+   */
+  responseAt(a: number, combo: number, strengthOverride?: number): { acts: string[]; forCombo: number[]; forRange: number[]; comboWeight: number; strength: number } | null {
+    const node = this.root.kids[a];
+    if (!node || node.type !== 'opp' || !node.facing) return null;
+    const A = node.acts.length;
+    const tmp = new Float64Array(A);
+    const one = (s: number, k: Knobs) => { const r = respond3(s, node.ctx!, k) as unknown as Record<string, number>; const p = node.acts.map((x) => x.mkeys.reduce((t: number, m) => t + (m ? r[m] ?? 0 : 0), 0)); const tot = p.reduce((x, y) => x + y, 0); if (tot < 1 - 1e-9) p[1] += 1 - tot; return p; };
+    const forCombo = new Array(A).fill(0);
+    for (const m of this.mix) one(strengthOverride ?? this.S0[combo], m.knobs).forEach((p, i) => { forCombo[i] += m.weight * p; });
+    const forRange = new Array(A).fill(0);
+    for (let d = 0; d < this.n; d++) { this.oppProbs(node, d, null, tmp); for (let i = 0; i < A; i++) forRange[i] += tmp[i] / this.n; }
+    let mx = 0; for (let i = 0; i < 1326; i++) mx = Math.max(mx, this.villainRange[i]);
+    return { acts: node.acts.map((x) => x.kind), forCombo, forRange, comboWeight: mx > 0 ? this.villainRange[combo] / mx : 0, strength: this.S0[combo] };
+  }
+
   // ---- evaluation ----------------------------------------------------------------------------
 
   /** Model probabilities of each act at an opponent node for one deal. */
@@ -400,8 +449,10 @@ export class PostflopSearchV3 {
     // Scores per half of the deals (even / odd index) and per strength bucket.
     const score = Array.from({ length: 2 * B }, () => new Float64Array(A));
     const mass = new Float64Array(2 * B);
+    const H = this.cfg.holdoutEvery;
     for (let d = 0; d < N; d++) {
       const r = reach[d]; if (r === 0) continue;
+      if (H > 0 && d % H === 0 && this.n >= 2 * H) continue;   // held-out deals never inform a choice
       const slot = 2 * (node.depth === 0 ? 0 : this.hb[d]) + (d & 1);
       mass[slot] += r;
       for (let a = 0; a < A; a++) score[slot][a] += r * kids[a][d];
@@ -471,18 +522,27 @@ export class PostflopSearchV3 {
     return labels.map((l, i) => `${l} with Hero's ${names[i]} holdings on that card`).join(', ');
   }
 
+  /** The deals root values are averaged over: the held-out ones under holdout valuation, otherwise all. */
+  private valueDeals(): number[] {
+    const H = this.cfg.holdoutEvery;
+    const all = Array.from({ length: this.n }, (_, d) => d);
+    return H > 0 && this.n >= 2 * H ? all.filter((d) => d % H === 0) : all;
+  }
+
   result(z = 2.5, scenarios = true): PostflopResult & { v3: V3Detail } {
-    const N = Math.max(1, this.n);
+    const D = this.valueDeals();
+    const N = Math.max(1, D.length);
     const vals = this.rootValues(null, true);
     const K = vals.length;
-    const ev = vals.map((v) => v.reduce((a, b) => a + b, 0) / N);
-    const variance = (v: Float64Array, m: number) => v.reduce((a, b) => a + (b - m) * (b - m), 0) / N;
+    const mean = (v: Float64Array) => { let t = 0; for (const d of D) t += v[d]; return t / N; };
+    const ev = vals.map(mean);
+    const variance = (v: Float64Array, m: number) => { let t = 0; for (const d of D) t += (v[d] - m) * (v[d] - m); return t / N; };
     const se = vals.map((v, c) => Math.sqrt(variance(v, ev[c]) / N));
     let best = 0;
     for (let c = 1; c < K; c++) if (ev[c] > ev[best]) best = c;
     let second = -1;
     for (let c = 0; c < K; c++) if (c !== best && (second < 0 || ev[c] > ev[second])) second = c;
-    const gapSe = (c: number) => { const d = new Float64Array(this.n); for (let i = 0; i < this.n; i++) d[i] = vals[best][i] - vals[c][i]; const m = d.reduce((a, b) => a + b, 0) / N; return Math.sqrt(variance(d, m) / N); };
+    const gapSe = (c: number) => { const d = new Float64Array(this.n); for (let i = 0; i < this.n; i++) d[i] = vals[best][i] - vals[c][i]; const m = mean(d); return Math.sqrt(variance(d, m) / N); };
     const evGap = second >= 0 ? ev[best] - ev[second] : null;
     const evGapSe = second >= 0 ? gapSe(second) : null;
     const pot = this.root.kids[0]?.end?.pot ?? 0;
@@ -522,7 +582,7 @@ export class PostflopSearchV3 {
     if (scenarios) {
       const alt: [string, Knobs][] = this.mix.map((m) => [m.name, m.knobs]);
       for (const [name, kk] of alt) {
-        const v = this.rootValues(kk, false).map((x) => x.reduce((a, b) => a + b, 0) / N);
+        const v = this.rootValues(kk, false).map(mean);
         let b2 = 0;
         for (let c = 1; c < K; c++) if (v[c] > v[b2]) b2 = c;
         detail.sensitivity.push({ scenario: name, evOfChosen: v[best], best: this.specs[b2].label, evBest: v[b2] });
@@ -559,9 +619,10 @@ export class PostflopSearchV3 {
     const tmp = new Float64Array(A);
     const reach = new Float64Array(N).fill(1);
     const Vk = kid.kids.map((c, a) => { const cr = new Float64Array(N); for (let d = 0; d < N; d++) { this.oppProbs(kid, d, null, tmp); cr[d] = reach[d] * tmp[a]; } return this.evalNode(c, cr, null, false); });
-    for (let d = 0; d < N; d++) { this.oppProbs(kid, d, null, tmp); for (let a = 0; a < A; a++) parts[a] += tmp[a] * Vk[a][d]; }
+    const D = this.valueDeals();
+    for (const d of D) { this.oppProbs(kid, d, null, tmp); for (let a = 0; a < A; a++) parts[a] += tmp[a] * Vk[a][d]; }
     void total;
-    return parts.map((p) => p / Math.max(1, N));
+    return parts.map((p) => p / Math.max(1, D.length));
   }
 
   /** After Hero checks and the opponent bets: the value of each of Hero's answers, per bet size, and what each would mean. */

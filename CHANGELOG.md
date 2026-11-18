@@ -2,6 +2,14 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.8.1 (2026-11-18)
+Phase 2.4: version 3's over-raising. Default engine unchanged (version 2); version 3 still offline. Accounts: `docs/bot/PHASE_2_4_MODEL_CALIBRATION.md`, `reports/PHASE_2_4_BENCHMARK.md`.
+- Found: version 3's learned knobs compared a player's raw fold rate after Hero's raises (and raise rate after Hero's bets) with a fixed population rate. That rate depends on Hero's own ranges, so the knobs counted it twice and drifted toward "this player folds" as hands accumulated (against version 2's model: "+0.13 extra folding to a check-raise", raising 76% facing bets, −114 bb/100).
+- Fixed: residual calibration. Version 3 records its own predicted response probability at each of its bets and raises, and a knob moves only by the gap between observed responses and those predictions (shrunk). Same decks: +73 ± 50 bb/100 over 0.8.0 against that opponent.
+- Measured on fresh seeds fixed in advance (12700, then 12900 once at the end): version 3 minus version 2, heads-up pooled, −1.8 ± 10.1 and −0.6 ± 10.9 bb/100; per decision −0.15 to 0.00 bb against three independent opponents. Equal, not better: not promoted.
+- New: holdout valuation option for version 3 (`holdoutEvery`, off by default: unbiased values but worse choices at the time budget); eight reference fixtures, one against a closed-form equilibrium; tools `sim/bot/v3-raise-diag.ts`, `sim/bot/cash-raise-counts.ts`, extended `v3-bias.ts`; diagnostic hook `onV3Search` (offline only).
+- Cash recording: 5 heads-up responses to raises; no fold-to-raise parameter can be estimated from it.
+
 ## v0.8.0 (2026-11-18)
 Phase 2.3, cash-game strategy. Default engine unchanged (version 2). Accounts: `docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md`, `reports/PHASE_2_3_BENCHMARK.md`.
 - New (offline, not offered in the extension): version 3 postflop engine, `engine: 'v3'`. A best response over the betting tree of the current and next street, built with the rules engine (check-raises, re-raises, call-then-raise, delayed bets). Opponent responses depend on the betting so far, ranges are updated by exact reach weights, and Hero decides against a mixture of opponent models. Heads-up pots only; everything else falls back to version 2 with the reason stated.

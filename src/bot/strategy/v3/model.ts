@@ -86,6 +86,52 @@ export const defaultKnobs = (tend: Tendencies): Knobs => ({
   tend, raiseMult: 1, checkRaiseShift: MODEL3.checkRaiseShift, raisedShift: MODEL3.raisedShift, barrelMult: 1, riverBetMult: 1, largeShare: MODEL3.largeShare, evidence: [], observed: 0,
 });
 
+/**
+ * RESIDUAL CALIBRATION of the response knobs (0.8.1, Phase 2.4).
+ *
+ * How often a player folds to Hero's raises depends on the hands Hero raises with and the hands the player holds
+ * when raised, not only on the player. Comparing the raw fold rate with a fixed population rate (as 0.8.0 did) counts
+ * that selection twice: against an opponent with a wide betting range, version 3's polar check-raises were folded to
+ * 64% of the time, so the model concluded "this player folds more", raised more, and over-raised (Phase 2.4 document).
+ *
+ * Instead, every time version 3 bets or raises, the fold (or raise) probability its own model predicts for the whole
+ * range is recorded at each value of a grid of the knob; when the hand is observed, what the player actually did is
+ * added. The knob is the grid value at which the model's predictions add up to the observed count, after shrinking
+ * the observed count toward the model's own neutral prediction with halfWeightAt pseudo-opportunities. When the
+ * model already predicts what is observed, the knob does not move.
+ */
+export const CALIB_GRID = {
+  shift: [-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
+  mult: [0.3, 0.4, 0.5, 0.6, 0.75, 0.9, 1, 1.15, 1.35, 1.6, 2, 2.5, 3],
+};
+export type CalibKey = 'foldToCheckRaise' | 'foldVsRaise' | 'raiseVsBet';
+export const CALIB_KIND: Record<CalibKey, 'shift' | 'mult'> = { foldToCheckRaise: 'shift', foldVsRaise: 'shift', raiseVsBet: 'mult' };
+/** Opportunities, observed responses, and the sum of the model's predicted probabilities at each grid value. */
+export interface CalibTally { n: number; observed: number; predicted: number[] }
+export type Calibration = Partial<Record<CalibKey, CalibTally>>;
+
+export function addCalib(c: Calibration, key: CalibKey, predicted: number[], happened: boolean): void {
+  const t = c[key] ?? (c[key] = { n: 0, observed: 0, predicted: new Array(predicted.length).fill(0) });
+  t.n++; if (happened) t.observed++;
+  predicted.forEach((p, i) => { t.predicted[i] += p; });
+}
+
+/** The knob value at which the model's predicted count equals the shrunk observed count (linear interpolation). */
+export function solveCalib(key: CalibKey, t: CalibTally, k = MODEL3.halfWeightAt): number {
+  const grid = CALIB_GRID[CALIB_KIND[key]];
+  const neutral = grid.indexOf(CALIB_KIND[key] === 'shift' ? 0 : 1);
+  if (t.n <= 0) return grid[neutral];
+  const p0 = t.predicted[neutral] / t.n;
+  const target = t.n * (t.observed + k * p0) / (t.n + k);
+  const P = t.predicted;
+  if (target <= P[0]) return grid[0];
+  if (target >= P[P.length - 1]) return grid[grid.length - 1];
+  for (let i = 0; i + 1 < P.length; i++) {
+    if (target >= P[i] && target <= P[i + 1]) return P[i + 1] - P[i] < 1e-12 ? grid[i] : grid[i] + (grid[i + 1] - grid[i]) * (target - P[i]) / (P[i + 1] - P[i]);
+  }
+  return grid[neutral];
+}
+
 /** The modelled opponent and the two deviations Hero cannot rule out, with their weights. */
 export function opponentMixture(k: Knobs, uncertainty = MODEL3.uncertainty): { knobs: Knobs; weight: number; name: string }[] {
   const a = uncertainty * MODEL3.halfWeightAt / (MODEL3.halfWeightAt + k.observed);
@@ -101,37 +147,31 @@ export function opponentMixture(k: Knobs, uncertainty = MODEL3.uncertainty): { k
  * using the Beta posterior mean (already shrunk toward the prior), so the movement is small until there are
  * dozens of opportunities. `exploitWeight` 0 returns the population assumptions.
  */
-export function knobsFor(p: PlayerProfile | undefined, tend: Tendencies, exploitWeight = 1): Knobs {
+export function knobsFor(p: PlayerProfile | undefined, tend: Tendencies, exploitWeight = 1, calib?: Calibration): Knobs {
   const k = defaultKnobs(tend);
+  if (exploitWeight > 0 && calib) {
+    // Residual calibration (see CALIB_GRID): only from version 3's own bets and raises against this player.
+    const show = (x: number) => x.toFixed(2);
+    for (const key of ['raiseVsBet', 'foldToCheckRaise', 'foldVsRaise'] as CalibKey[]) {
+      const t = calib[key]; if (!t || t.n === 0) continue;
+      const neutral = CALIB_KIND[key] === 'shift' ? 0 : 1;
+      const v = neutral + exploitWeight * (solveCalib(key, t) - neutral);
+      const p0 = t.predicted[CALIB_GRID[CALIB_KIND[key]].indexOf(neutral)];
+      const what = key === 'raiseVsBet' ? 'raises facing a bet' : key === 'foldToCheckRaise' ? 'extra folding to a check-raise' : 'extra folding when raised';
+      if (Math.abs(v - neutral) > 0.01) k.evidence.push(`${what}: ${key === 'raiseVsBet' ? 'x' : ''}${show(v)} from ${t.observed} ${key === 'raiseVsBet' ? 'raises' : 'folds'} in ${t.n} of Hero's ${key === 'raiseVsBet' ? 'bets' : 'raises'}, where the model predicted ${p0.toFixed(1)}`);
+      if (key === 'raiseVsBet') k.raiseMult = v; else if (key === 'foldToCheckRaise') k.checkRaiseShift = v; else k.raisedShift = v;
+    }
+  }
   if (!p || exploitWeight <= 0) return k;
   k.observed = p.stats.foldVsBetFlop.d + p.stats.foldVsBetTurn.d + p.stats.foldVsBetRiver.d;
   const w = (d: number) => exploitWeight * d / (d + MODEL3.halfWeightAt);
   const stat = (key: StatKey) => { const q = posterior(p, key); return { q, prior: PRIORS[key].mean, wt: w(q.d) }; };
   const note = (name: string, key: StatKey, from: string, to: string) => { const q = posterior(p, key); k.evidence.push(`${name}: ${to} (was ${from}) from ${q.n} of ${q.d} observed, estimate ${(100 * q.mean).toFixed(0)}%`); };
 
-  // Raising facing a bet: pooled over streets.
-  const rk: StatKey[] = ['raiseVsBetFlop', 'raiseVsBetTurn', 'raiseVsBetRiver'];
-  let rn = 0, rd = 0, rp = 0;
-  for (const key of rk) { const c = p.stats[key]; rn += c.n; rd += c.d; rp += PRIORS[key].mean * PRIORS[key].k; }
-  if (rd > 0) {
-    const priorMean = rp / rk.reduce((a, key) => a + PRIORS[key].k, 0), kk = 12;
-    const mean = (priorMean * kk + rn) / (kk + rd);
-    const mult = clamp(1 + w(rd) * (mean / priorMean - 1), 0.3, 3);
-    if (Math.abs(mult - 1) > 0.05) k.evidence.push(`raises facing a bet x${mult.toFixed(2)} from ${rn} raises in ${rd} spots`);
-    k.raiseMult = mult;
-  }
-  const fcr = stat('foldToCheckRaise');
-  if (fcr.q.d > 0) {
-    const shift = clamp(MODEL3.checkRaiseShift + fcr.wt * (fcr.q.mean - fcr.prior) * 0.8, -0.2, 0.3);
-    if (Math.abs(shift - MODEL3.checkRaiseShift) > 0.01) note('extra folding to a check-raise', 'foldToCheckRaise', MODEL3.checkRaiseShift.toFixed(2), shift.toFixed(2));
-    k.checkRaiseShift = shift;
-  }
-  const fvr = stat('foldVsRaise');
-  if (fvr.q.d > 0) {
-    const shift = clamp(MODEL3.raisedShift + fvr.wt * (fvr.q.mean - fvr.prior) * 0.8, -0.2, 0.3);
-    if (Math.abs(shift - MODEL3.raisedShift) > 0.01) note('extra folding when raised', 'foldVsRaise', MODEL3.raisedShift.toFixed(2), shift.toFixed(2));
-    k.raisedShift = shift;
-  }
+  // raiseVsBet*, foldToCheckRaise and foldVsRaise are NOT turned into knobs from their raw frequencies any more: those
+  // frequencies depend on Hero's own betting and raising ranges (selection), so they are calibrated as residuals of
+  // the model's own predictions instead (CALIB_GRID). The profile still counts them for display and data.
+  void note;
   const barrel = stat('cbetTurn');
   if (barrel.q.d > 0) {
     k.barrelMult = clamp(1 + barrel.wt * (barrel.q.mean / barrel.prior - 1), 0.4, 2);

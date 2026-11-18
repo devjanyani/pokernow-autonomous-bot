@@ -16,7 +16,7 @@ import { applyHandToProfiles, PlayerProfile } from './opponents/profile';
 import { decidePreflop } from './strategy/preflop';
 import { PostflopSolver, PostflopResult } from './strategy/postflop';
 import { PostflopSolverV1 } from './strategy/postflop-v1';
-import { knobsFor } from './strategy/v3/model';
+import { addCalib, Calibration, CalibKey, knobsFor } from './strategy/v3/model';
 import { PostflopSearchV3, V3Detail } from './strategy/v3/search';
 import { analyseSpot, describeSpot, SpotInfo } from './strategy/spot';
 import { Candidate, Decision } from './strategy/types';
@@ -49,6 +49,8 @@ export interface AgentOptions {
   postflopEngine?: 'v1' | 'v2' | 'v3';
   /** Version 3: also evaluate the chosen action under two other opponent models (three times the evaluation work). Default true. */
   v3Sensitivity?: boolean;
+  /** Diagnostics only (offline tools): called with every version 3 search and the decision made from it. */
+  onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
 }
 
 export interface DecideOptions {
@@ -73,6 +75,12 @@ export class DecisionCancelled extends Error {
 
 export class BotAgent {
   readonly profiles = new Map<string, PlayerProfile>();
+  /**
+   * Version 3 residual calibration per player (model.ts CALIB_GRID), from version 3's own bets and raises. In memory
+   * only: version 3 is an offline engine, and the extension does not use it.
+   */
+  readonly v3Calibration = new Map<string, Calibration>();
+  private readonly v3Pending = new Map<string, { playerId: string; oppSeat: number; heroSeat: number; ev: number; key: CalibKey; predicted: number[] }>();
   private readonly cache = new FeatureCache();
   private readonly exploitWeight: number;
   private readonly seed: number;
@@ -81,6 +89,7 @@ export class BotAgent {
   private readonly preflopEngine: 'v1' | 'v2' | 'v3';
   private readonly postflopEngine: 'v1' | 'v2' | 'v3';
   private readonly v3Sensitivity: boolean;
+  private readonly onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
@@ -89,11 +98,25 @@ export class BotAgent {
     this.preflopEngine = opts.preflopEngine ?? this.engine;
     this.postflopEngine = opts.postflopEngine ?? this.engine;
     this.v3Sensitivity = opts.v3Sensitivity ?? true;
+    this.onV3Search = opts.onV3Search;
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
   /** Record a completed hand in the opponent profiles (idempotent per hand id). */
   observeHand(h: HandState, reveals: Map<number, [CardId, CardId]> = new Map(), now = 0): string[] {
+    for (const [id, p] of this.v3Pending) {
+      if (!id.startsWith(`${h.handId}:`)) continue;
+      const mine = h.events[p.ev];
+      if (mine && mine.seat === p.heroSeat && (mine.kind === 'bet' || mine.kind === 'raise')) {
+        const next = h.events.slice(p.ev + 1).find((e) => e.seat === p.oppSeat && !e.kind.startsWith('post'));
+        if (next) {
+          const cal: Calibration = this.v3Calibration.get(p.playerId) ?? {};
+          addCalib(cal, p.key, p.predicted, p.key === 'raiseVsBet' ? next.kind === 'raise' : next.kind === 'fold');
+          this.v3Calibration.set(p.playerId, cal);
+        }
+      }
+    }
+    this.v3Pending.clear();
     return applyHandToProfiles(this.profiles, h, reveals, now);
   }
 
@@ -189,7 +212,7 @@ export class BotAgent {
     const v = prep.villains[0];
     const seed = prep.rng.int(1 << 30);
     try {
-      return new PostflopSearchV3(h, heroSeat, heroCards, v, knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight), this.cache.get(h.board), seed, prep.heroPerceived);
+      return new PostflopSearchV3(h, heroSeat, heroCards, v, knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight, this.v3Calibration.get(v.playerId)), this.cache.get(h.board), seed, prep.heroPerceived);
     } catch (e) { return `search not built: ${(e as Error).message}`; }
   }
 
@@ -289,7 +312,11 @@ export class BotAgent {
       equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional,
       lowConfidence: (pick.action === 'bet' || pick.action === 'raise') && (line.equityWhenCalled === null || line.equityWhenCalled < 0.33),
     }, t0);
-    const knobs = knobsFor(this.profiles.get(prep.villains[0].playerId), prep.villains[0].tend, this.exploitWeight);
+    const knobs = knobsFor(this.profiles.get(prep.villains[0].playerId), prep.villains[0].tend, this.exploitWeight, this.v3Calibration.get(prep.villains[0].playerId));
+    if (!provisional && (pick.action === 'bet' || pick.action === 'raise')) {
+      const curve = search.calibCurve(chosen);
+      if (curve) this.v3Pending.set(`${h.handId}:${h.events.length}`, { playerId: prep.villains[0].playerId, oppSeat: prep.villains[0].seat, heroSeat, ev: h.events.length, ...curve });
+    }
     for (const e of knobs.evidence) dd.adjustments.push(`learned (version 3): ${prep.villains[0].name}: ${e}`);
     return { ...dd, engine: 'v3' };
   }
@@ -300,7 +327,7 @@ export class BotAgent {
     const prep = this.prepare(h, heroSeat, heroCards);
     if (h.street === 'preflop') return this.preflop(h, heroSeat, heroCards, prep, t0);
     const v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
-    if (typeof v3 !== 'string') { v3.run(samples); return this.decisionV3(h, heroSeat, prep, v3, false, t0, this.v3Sensitivity); }
+    if (typeof v3 !== 'string') { v3.run(samples); const d = this.decisionV3(h, heroSeat, prep, v3, false, t0, this.v3Sensitivity); this.onV3Search?.(v3, d); return d; }
     const solver = this.newSolver(h, heroSeat, heroCards, prep);
     if (this.postflopEngine === 'v3') { solver.run(samples); const d = this.postflopDecision(h, heroSeat, prep, solver, false, t0); d.basis.push(`version 3 not used: ${v3}; version 2 decided`); return d; }
     solver.run(samples);

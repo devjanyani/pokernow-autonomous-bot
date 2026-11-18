@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Poker Bot for PokerNow (local engine)",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Fully local No-Limit Hold'em engine for authorised PokerNow bot competitions: state tracking, multiway equity, opponent profiles, recommendations and guarded autonomous play.",
   "minimum_chrome_version": "110",
   "permissions": [
