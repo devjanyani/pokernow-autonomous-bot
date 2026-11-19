@@ -1,10 +1,26 @@
 # Project progress
 
-Last updated: 2026-11-19. Branch `autonomous-bot`. Version 0.9.0.
+Last updated: 2026-11-19. Branch `autonomous-bot`. Version 0.9.1.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-19, version 0.9.0)
+## Checkpoint (2026-11-19, version 0.9.1)
+
+- Authorised execution for experimental version 3 and scheduled action timing, for organiser-authorised play-money
+  bot games only ([AUTHORISED_EXECUTION.md](docs/bot/AUTHORISED_EXECUTION.md)). Version 2 stays the default; version 3
+  stays experimental and recommendation-only unless its separate execution permission (Settings, off by default) is
+  on, in addition to autonomous mode, the organiser confirmation and the table's own authorisation.
+- Each decision waits one delay drawn when Hero's turn is confirmed (uniform 4-20 s by default, same for every action,
+  computation included), never past the deadline minus a 3 s margin; a pending action is cancelled at once on any
+  change of state, permission or settings. No strategy algorithm changed.
+- Validated: `tests/bot/scheduler.test.ts` 18/18 (manual clock, seeded randomness); Chromium against the stand-in
+  table 23/23 ([reports/e2e-exec-2026-11-19.md](reports/e2e-exec-2026-11-19.md)): 18 turns acted on after 4.2-19.9 s,
+  0 timeouts, 0 clicks without the permissions, 2.1-2.5 s with a 5 s clock and the conflict shown. Not run on the live site.
+- Open: the full-suite confirmation after the final test-timeout change was stopped by a low-memory condition (the
+  earlier full run: 1,208 of 1,211, the 3 failures being timeouts of new tests under load, since raised); the existing
+  Chromium checks (`bot:e2e`, `bot:e2e:recommend`, `e2e-v3`) were not re-run for 0.9.1.
+
+## Previous checkpoint (2026-11-19, version 0.9.0)
 
 - Branch `autonomous-bot`, version 0.9.0, pushed to remote `private`. `dist/` is built at 0.9.0.
 - Phase 2.5 completed: the final held-out set (seed 13300) was run once, untouched. Calibrated version 3 (v3pr) minus
@@ -66,7 +82,9 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 
 ## Where things stand
 
-**0.9.0 (latest): version 3 as an experimental, recommendation-only option.** The Phase 2.5 final set shows calibrated version 3 level with version 2 (+1.1 ± 11.4 bb/100). It can be tried in Settings; it never clicks, and preflop and multiway spots fall back to version 2. Details: [V3_EXTENSION_INTEGRATION.md](reports/V3_EXTENSION_INTEGRATION.md).
+**0.9.1 (latest): authorised execution and timing.** Experimental version 3 can act on authorised play-money bot tables with its own opt-in; every action waits a per-decision delay of 4-20 s by default within the deadline. Details: [AUTHORISED_EXECUTION.md](docs/bot/AUTHORISED_EXECUTION.md).
+
+**0.9.0: version 3 as an experimental, recommendation-only option.** The Phase 2.5 final set shows calibrated version 3 level with version 2 (+1.1 ± 11.4 bb/100). It can be tried in Settings; it never clicks, and preflop and multiway spots fall back to version 2. Details: [V3_EXTENSION_INTEGRATION.md](reports/V3_EXTENSION_INTEGRATION.md).
 
 **0.8.2: Phase 2.5, opponent learning from real hands.** 89,170 real 2009 cash hands show that the hand-set opponent model over-predicts folding, above all when raised, and that river betting ranges are estimated too strong. Fitted models predict significantly better; inside version 3 they do not yet play measurably better against the simulated opponents. Details: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md).
 

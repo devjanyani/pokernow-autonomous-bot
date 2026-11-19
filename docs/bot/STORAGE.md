@@ -74,12 +74,17 @@ execution: { status, reason, ms } | null     null = shown only
 mode: manual | recommend | autonomous        default recommend
 estop: boolean
 authorizationConfirmed: boolean, authorizedTables: [tableId]
-exploitWeight (0..1), minThinkMs, maxThinkMs, assumedClockMs, minConfidence
+exploitWeight (0..1), assumedClockMs (3-120 s, default 20 s), minConfidence
+randomDelay: boolean                         default true (0.9.1; replaces minThinkMs / maxThinkMs, which are dropped)
+minDelayMs (0-60 s, default 4 s), maxDelayMs (>= min, up to 120 s, default 20 s), deadlineMarginMs (0.5-10 s, default 3 s)
+v3ExecutionOptIn: boolean                    default false (0.9.1). Lets version 3 act where mayAct() otherwise allows
+                                             it. Stored only together with authorizationConfirmed: reading settings
+                                             without the confirmation clears it.
 showPanel, timeoutAction: check-fold | nothing
 selectorOverrides: { selectorName: cssSelector }
 recordDiagnostics: boolean
-strategyEngine: v2 | v1 | v3                 default v2. v3 (0.9.0) is experimental and recommendation-only:
-                                             mayAct() is false while it is selected, whatever mode and authorisation.
+strategyEngine: v2 | v1 | v3                 default v2. v3 (0.9.0) is experimental and recommendation-only unless
+                                             v3ExecutionOptIn is on: mayAct() is false otherwise, whatever mode and authorisation.
                                              An unknown or missing value reads as v2 (no silent switch).
 shadowV3: boolean                            default false. Diagnostic only: with v2 selected, also compute version 3's
                                              recommendation after version 2's and show both; never executed, never

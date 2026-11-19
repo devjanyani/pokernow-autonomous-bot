@@ -1,4 +1,4 @@
-# Version 3 in the extension (0.9.0): experimental, recommendation-only
+# Version 3 in the extension (0.9.0, execution permission 0.9.1): experimental, recommendation-only by default
 
 Version 3 is the postflop search over betting sequences of Phase 2.3 ([STRATEGY.md](STRATEGY.md) section 9), with the
 residual calibration of Phase 2.4 and the population tables of Phase 2.5. Since 0.9.0 it can be selected in the
@@ -8,11 +8,17 @@ The measurements behind this page are in [reports/V3_EXTENSION_INTEGRATION.md](.
 
 ## 1. Selecting it
 
-Dashboard → Settings → Strategy experiments → **Strategy engine: "v3 — Experimental (recommendation-only)"**. It takes
+Dashboard → Settings → Strategy experiments → **Strategy engine: "v3 — Experimental (recommendation-only by default)"**. It takes
 effect at the next decision. Version 2 is the default; a stored setting written by an earlier version, or any value
 other than `v1`, `v2` or `v3`, reads as version 2, so nobody is switched to version 3 without choosing it.
 
-## 2. Recommendation-only, enforced in one place
+## 2. Recommendation-only unless separately permitted, enforced in one place
+
+Since 0.9.1 version 3 can act on tables authorised for autonomous play, but only with a separate, experimental
+permission (Settings → "Allow version 3 to act on authorised tables (experimental)", off by default, behind a
+confirmation dialog, cleared when the organiser confirmation is withdrawn). See
+[AUTHORISED_EXECUTION.md](AUTHORISED_EXECUTION.md) for the gate, the timing and the fallbacks during execution.
+Without that permission:
 
 `mayAct()` (`src/bot/ext/records.ts`) is false whenever `strategyEngine` is `v3`, whatever the mode, the confirmation
 and the table authorisation. Every path to a click goes through it: the executor is armed from it on every tick, the

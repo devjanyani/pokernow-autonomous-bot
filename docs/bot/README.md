@@ -34,7 +34,7 @@ Set in the toolbar popup.
 | Recommend (default) | yes | yes | never |
 | Autonomous | yes | yes | only on an authorised table |
 
-To let it act: tick the authorisation box in the popup, open the table, click **Authorise this table**, and choose Autonomous. All three are required, per table. Unticking the box clears every authorised table.
+To let it act: tick the authorisation box in the popup (organiser allows bots, play money only), open the table, click **Authorise this table**, and choose Autonomous. All three are required, per table. Unticking the box clears every authorised table and the version 3 execution permission. Version 3 additionally needs its own permission in Settings. Each action waits a delay drawn per decision (4-20 s by default, never past the clock minus a safety margin): [AUTHORISED_EXECUTION.md](AUTHORISED_EXECUTION.md).
 
 **Emergency stop** is the red button in the in-page panel, the popup and the dashboard. It disarms the executor immediately and stays on until you clear it in the popup or dashboard.
 
@@ -46,7 +46,7 @@ Popup, then **Open dashboard**.
 - **Opponents**: every profile with counts, opportunities, shrunk estimates and intervals, style probabilities, evidence-gated observations, bet sizes, showdowns.
 - **Hand review**: stored hands with the full action and the bot's decision at each of its turns.
 - **Diagnostics** (collapsible sections): six separate state checks, observed versus predicted actor, the action timeline of the current hand, player participation, discrepancies, **Export Debug Bundle**, which page elements were found, the event log. See [TRACKING.md](TRACKING.md).
-- **Settings**: strategy engine (version 2 by default; version 1; **v3 — Experimental**, recommendation-only), shadow comparison with version 3 (off by default), think time, confidence threshold, assumed clock, selector overrides, PokerNow log import, export, delete.
+- **Settings**: authorised-play timing (random 4-20 s per decision by default, deadline safety margin, assumed clock, with the pending action, its remaining delay and the last cancellation shown live), strategy engine (version 2 by default; version 1; **v3 — Experimental**, recommendation-only unless its separate execution permission is on), shadow comparison with version 3 (off by default), confidence threshold, selector overrides, PokerNow log import, export, delete.
 
 ## Trying version 3 (experimental, recommendation-only)
 
@@ -128,6 +128,7 @@ npm test                     # everything, including the original repository's s
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, data flow, Manifest V3 lifecycle, security.
 - [STRATEGY.md](STRATEGY.md): the mathematics, how heads-up and multiway are chosen, and where every piece of strategic knowledge comes from.
+- [AUTHORISED_EXECUTION.md](AUTHORISED_EXECUTION.md): when the extension clicks, the version 3 execution permission, how delays are drawn, deadlines, cancellation and stale-action protection.
 - [V3_IN_THE_EXTENSION.md](V3_IN_THE_EXTENSION.md): the experimental version 3 option: wiring, fallbacks, the fitted tables it uses and their checks, recommendation-only enforcement, shadow comparison.
 - [STRATEGY_AUDIT.md](STRATEGY_AUDIT.md): the audit of the strategy engine against recorded hands, the confirmed defects and what replaced them.
 - [STRATEGY_LIBRARY.md](STRATEGY_LIBRARY.md): strategy packs, import formats, and the strategy data that is missing.

@@ -1,33 +1,27 @@
 # Development session log
 
-The 2026-11-19 session completed Phase 2.5 and integrated version 3 into the extension as an experimental option,
-from commit `7314571` (v0.8.2). The Phase 2.5 log is in git history at `7314571`.
+2026-11-19, second part: authorised execution for experimental version 3 and action scheduling (0.9.1), from commit
+`00c7157` (v0.9.0). The v0.9.0 log is in git history at `00c7157`.
 
-## Current state (checkpoint, v0.9.0)
+## Current state (checkpoint, v0.9.1)
 
-- **Phase 2.5 final set (seed 13300):** run once with `npm run bot:phase25 -- --bench --seed 13300 --jobs 1`, nothing
-  changed before or after; the re-derived tables were byte-identical. v3pr − v2 +1.1 ± 11.4 bb/100 (level), v3r − v3
-  −5.6 ± 3.7 (worse). Per-deal results `reports/phase25-bench-13300.jsonl`; account
-  `reports/PHASE_2_5_STRATEGY_BENCHMARK.md`.
-- **Extension:** Settings offers v1, v2 (default) and "v3 — Experimental (recommendation-only)".
-  - `mayAct()` is false under v3.
-  - Validated tables: `src/bot/strategy/v3/artifacts.ts`.
-  - Strategy note on every decision, dashboard and diagnostics labels, fallback to v2.
-  - Shadow comparison (off by default).
-  - Tests: `tests/bot/v3-extension.test.ts`. Chromium check: `sim/bot/e2e-v3.ts`. Latency: `sim/bot/v3-latency.ts`.
-- **Seeds:** used 13100, 13300 (Phase 2.5, now spent); fixed but not run: 13150 (reference evaluation); earlier
-  phases 12100–12900. A new held-out seed is needed for any future claim.
+- **Gate:** `executionStatus()` / `mayAct()` in `src/bot/ext/records.ts`: autonomous mode, no emergency stop, organiser
+  confirmation, table authorised, and with v3 selected the separate `v3ExecutionOptIn` (default false, cleared without
+  the confirmation). Checked on every read, again just before the click, and by the executor's re-validation.
+- **Scheduler:** `src/bot/ext/scheduler.ts`; settings `randomDelay`, `minDelayMs` (4 s), `maxDelayMs` (20 s),
+  `deadlineMarginMs` (3 s), `assumedClockMs` (20 s). Replaces `minThinkMs` / `maxThinkMs`.
+- **Tests:** `tests/bot/scheduler.test.ts` (18, all 15 requested cases); e2e `npm run bot:e2e:exec` (23/23, stand-in
+  table, real time). The stand-in table takes `clock=<s>`.
+- **Not done:** full-suite re-run after the last test change (stopped for low memory; not restarted); existing
+  Chromium checks not re-run for 0.9.1; no live PokerNow session.
 
 ## To resume
 
-1. `git pull private autonomous-bot`; `npm install` if needed; `npm test`; `npm run build`.
-2. To try version 3: reload the extension in `chrome://extensions`, reload the PokerNow tab, then Dashboard → Settings
-   → Strategy engine → "v3 — Experimental (recommendation-only)".
-3. Open: a live play-money session with v3 selected or shadow comparison on (the browser checks used the stand-in
-   table only); response functions of hand strength need data with hole cards known outside showdown
-   (`docs/bot/PHASE_2_5_OPPONENT_LEARNING.md` section 8); the river tilt should not be kept alone.
+1. `npm test` (about 12 minutes; one process); `npm run build`; then one at a time `npm run bot:e2e`,
+   `npm run bot:e2e:recommend`, `npx tsx sim/bot/e2e-v3.ts`, `npm run bot:e2e:exec`.
+2. Live test on an organiser-authorised play-money table: see docs/bot/AUTHORISED_EXECUTION.md.
 
 ## Rules kept
 
-No autonomous clicking under v3; v2 remains the default; nothing uploaded; no raw hands, player hashes or bundles
-committed; tournament hands never used; the final seed run once and not tuned on.
+No strategy algorithm changed; v2 default; v3 experimental and recommendation-only unless separately permitted;
+table authorisation, emergency stop, legality and reconciliation checks intact; nothing uploaded.

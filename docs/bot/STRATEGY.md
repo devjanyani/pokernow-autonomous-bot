@@ -142,7 +142,7 @@ Importance is `streetWeight × (0.45·stakes + 0.3·branching + 0.25·multiway) 
 
 The loop returns a provisional decision after the first batch and stops when: the sample ceiling or hard limit is reached; the best action leads by more than 2.5 standard errors and 0.5% of the pot; the candidates are tied within 0.4% of the pot (more samples cannot matter); or, past the soft limit, the difference is known to within 0.3% of the pot. It is cancelled the moment the hand or the turn changes.
 
-In autonomous mode a bounded random think time (settings, default 0.6 to 2.2 s) is added, never past the deadline. When the page shows no clock, the configured assumed clock (default 20 s) is used.
+In autonomous mode on an authorised table the action is scheduled (0.9.1, [AUTHORISED_EXECUTION.md](AUTHORISED_EXECUTION.md)): one delay per decision, uniform in 4 to 20 s by default and drawn before the recommendation exists, computation included, never later than the deadline minus a 3 s margin. When the page shows no clock, the configured assumed clock (default 20 s) is used from the start of the turn.
 
 Measured: a decision takes a few milliseconds even at 8,000 samples (see `reports/`), so in practice the stopping rule, not the clock, ends the computation.
 
