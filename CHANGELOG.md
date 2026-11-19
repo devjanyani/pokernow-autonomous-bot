@@ -2,6 +2,16 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.9.0 (2026-11-19)
+Version 3 becomes selectable in the extension as an experimental, recommendation-only strategy. Version 2 stays the default; nobody is switched. Accounts: `docs/bot/V3_IN_THE_EXTENSION.md`, `reports/V3_EXTENSION_INTEGRATION.md`, final Phase 2.5 benchmark in `reports/PHASE_2_5_STRATEGY_BENCHMARK.md`.
+- New: Settings → Strategy engine → "v3 — Experimental (recommendation-only)". `mayAct()` is false whenever it is selected, so nothing is clicked whatever the mode and table authorisation (one gate for every click path; the popup says so).
+- New: version 3 in the extension uses the Phase 2.5 population calibration (model D) and the river-range tilt, packaged as small aggregate tables and validated at start-up (pinned source, feature schema, fitted grid, monotone fold shifts). A table that fails is not used; version 3 then uses its hand-set baseline and says so. The tables are not applied at heads-up tables (no such data).
+- New: every decision records which engine was requested and which decided, the fallback reason, the opponent model and the fitted tables used. The dashboard names the strategy ("v3 experimental", "v3 → v2 fallback: …"); the panel names it when it is not the default; Diagnostics shows the tables' provenance; the debug bundle records the setting.
+- New: a failure inside version 3 falls back to version 2 for that decision (cancellations are passed on, never turned into fallbacks). Version 3 yields to the page before its final evaluation (longest synchronous block measured about 190 ms in Node, `reports/v3-latency.md`).
+- New (diagnostic, off by default): shadow comparison. With version 2 selected, version 3's recommendation for the same decision point is computed after version 2's and shown beside it, with each engine's own EV labelled as not comparable. Never executed or stored as a decision.
+- Fixed: changing the strategy engine or the opponent-adjustment weight rebuilt the agent with seed 1 instead of the table's seed.
+- New tools: `sim/bot/e2e-v3.ts` (Chromium, stand-in table), `sim/bot/v3-latency.ts` rewritten (time to first recommendation, total time, longest block); the stand-in table takes `cents=1` (0.25 / 0.50).
+
 ## v0.8.2 (2026-11-18)
 Phase 2.5: opponent learning from real cash-game hands. No production behaviour changed (version 2 default; version 3 offline). Accounts: `docs/bot/PHASE_2_5_OPPONENT_LEARNING.md`, `reports/PHASE_2_5_CALIBRATION.md`, `reports/PHASE_2_5_STRATEGY_BENCHMARK.md`.
 - Data: 89,170 valid cash hands (237,380 postflop decisions) from a pinned, bounded sample of the MIT-licensed PHH dataset (HandHQ, 2009 online 100NL-200NL), fetched reproducibly with hashes into the git-ignored data folder; provenance record validated. Heads-up tables excluded (blind order inconsistent in the conversion); unknown iPoker stacks flagged.

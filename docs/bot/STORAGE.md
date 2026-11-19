@@ -78,7 +78,12 @@ exploitWeight (0..1), minThinkMs, maxThinkMs, assumedClockMs, minConfidence
 showPanel, timeoutAction: check-fold | nothing
 selectorOverrides: { selectorName: cssSelector }
 recordDiagnostics: boolean
-strategyEngine: v2 | v1                      default v2 (experiment; see STRATEGY_V2_DIAGNOSIS.md)
+strategyEngine: v2 | v1 | v3                 default v2. v3 (0.9.0) is experimental and recommendation-only:
+                                             mayAct() is false while it is selected, whatever mode and authorisation.
+                                             An unknown or missing value reads as v2 (no silent switch).
+shadowV3: boolean                            default false. Diagnostic only: with v2 selected, also compute version 3's
+                                             recommendation after version 2's and show both; never executed, never
+                                             stored as a decision.
 ```
 
 `profilesDeleted`: `{ ids, at }`, written when profiles are deleted so that open table tabs drop their copies.

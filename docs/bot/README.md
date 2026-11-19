@@ -46,7 +46,22 @@ Popup, then **Open dashboard**.
 - **Opponents**: every profile with counts, opportunities, shrunk estimates and intervals, style probabilities, evidence-gated observations, bet sizes, showdowns.
 - **Hand review**: stored hands with the full action and the bot's decision at each of its turns.
 - **Diagnostics** (collapsible sections): six separate state checks, observed versus predicted actor, the action timeline of the current hand, player participation, discrepancies, **Export Debug Bundle**, which page elements were found, the event log. See [TRACKING.md](TRACKING.md).
-- **Settings**: think time, confidence threshold, assumed clock, selector overrides, PokerNow log import, export, delete.
+- **Settings**: strategy engine (version 2 by default; version 1; **v3 — Experimental**, recommendation-only), shadow comparison with version 3 (off by default), think time, confidence threshold, assumed clock, selector overrides, PokerNow log import, export, delete.
+
+## Trying version 3 (experimental, recommendation-only)
+
+Version 3 searches heads-up pots after the flop over betting sequences (check-raises, re-raises, calling now and betting
+or raising later) against an opponent model calibrated on real cash-game hands. It has **not** been shown to play
+better than version 2. To try it at a play-money table:
+
+1. Build (`npm run build`), press the reload icon on the extension card in `chrome://extensions`, reload the PokerNow tab.
+2. Dashboard → **Settings** → Strategy experiments → Strategy engine → **v3 — Experimental (recommendation-only)**.
+3. Play as usual. The Live tab shows "Strategy: v3 experimental" or, for preflop and multiway spots, "Strategy: v3 → v2
+   fallback" with the reason. Nothing is clicked while version 3 is selected, whatever the mode.
+4. To go back, choose Version 2 in the same menu. Profiles and history are kept.
+
+Alternatively keep version 2 and switch on **Shadow comparison with version 3**: the Live tab then also shows what
+version 3 would have done, for comparison only. Details: [V3_IN_THE_EXTENSION.md](V3_IN_THE_EXTENSION.md).
 
 ## Checking a strategic decision
 
@@ -113,6 +128,7 @@ npm test                     # everything, including the original repository's s
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, data flow, Manifest V3 lifecycle, security.
 - [STRATEGY.md](STRATEGY.md): the mathematics, how heads-up and multiway are chosen, and where every piece of strategic knowledge comes from.
+- [V3_IN_THE_EXTENSION.md](V3_IN_THE_EXTENSION.md): the experimental version 3 option: wiring, fallbacks, the fitted tables it uses and their checks, recommendation-only enforcement, shadow comparison.
 - [STRATEGY_AUDIT.md](STRATEGY_AUDIT.md): the audit of the strategy engine against recorded hands, the confirmed defects and what replaced them.
 - [STRATEGY_LIBRARY.md](STRATEGY_LIBRARY.md): strategy packs, import formats, and the strategy data that is missing.
 - [TRACKING.md](TRACKING.md): state reconstruction, turn tracking, the debug bundle, replay, and the steps for the next live test.

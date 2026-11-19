@@ -1,6 +1,6 @@
 {
   "name": "gto-poker-overlay",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Fully local No-Limit Hold'em bot for authorised PokerNow bot competitions (Chrome MV3 extension), with an offline 2-10 player simulator. Built on the gto-poker-overlay toolkit.",
   "scripts": {
     "build": "tsc --noEmit -p . && webpack --mode production",
