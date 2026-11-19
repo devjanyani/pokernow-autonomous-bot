@@ -10,11 +10,11 @@ import { BotStorage } from './storage';
 import { renderDiag, diagBusy } from './tabs/diag';
 import { renderHands } from './tabs/hands';
 import { renderOpponents } from './tabs/opponents';
-import { renderSettings } from './tabs/settings';
+import { renderScheduleStatus, renderSettings } from './tabs/settings';
 import { renderTables } from './tabs/tables';
 import type { Ctx } from './ui/context';
 import { $, card, dl, el, playingCard, tag } from './ui/dom';
-import { actorLine, cardView, chips, contextRows, decisionBanner, explanation, playerRows, recentTimeline, shadowRows, statusPill, strategyTag } from './view';
+import { actorLine, cardView, chips, contextRows, decisionBanner, explanation, playerRows, recentTimeline, executionLine, scheduleRows, shadowRows, statusPill, strategyTag } from './view';
 import { pct, tableLabel } from './viewmodel';
 
 const storage = new BotStorage();
@@ -67,6 +67,7 @@ function renderLive(): void {
     el('span', { class: 'muted' }, pill.detail),
     l ? el('span', { class: 'spacer' }) : null,
     stratTag,
+    (() => { const x = executionLine(l); if (!x) return null; const t = tag(x.text, x.tone); t.id = 'execution-tag'; return t; })(),
     l ? tag(l.estop ? 'Emergency stop on' : l.acting ? 'Autonomous' : l.mode === 'manual' ? 'Manual' : 'Recommend only', l.estop ? 'warn' : 'muted') : null));
 
   // ---- table: hero and board ----
@@ -109,6 +110,8 @@ function renderLive(): void {
     dec.append(more);
   }
   root.append(dec);
+  const sched = l && (l.acting || l.schedule?.lastCancel || l.schedule?.lastExecuted) ? scheduleRows(l) : [];
+  if (sched.length) { const c = card('Authorised play: scheduled action', dl(sched)); c.id = 'schedule'; root.append(c); }
   const sh = shadowRows(l);
   if (sh.length) { const c = card('Shadow comparison (diagnostic only)', dl(sh)); c.id = 'shadow'; root.append(c); }
 
@@ -178,6 +181,7 @@ async function init(): Promise<void> {
       live = c.live.newValue as LiveState;
       if (prev?.tableId !== live?.tableId) renderStop();
       if (activeTab === 'live') renderLive();
+      else if (activeTab === 'settings') renderScheduleStatus(live);
       // The diagnostics tab is redrawn only when the reconstruction changed and nobody is working in it.
       else if (activeTab === 'diag' && live && (!prev || prev.timeline.length !== live.timeline.length || prev.hand?.handId !== live.hand?.handId || prev.tracker.turnStatus !== live.tracker.turnStatus || prev.tracker.blockers.join() !== live.tracker.blockers.join()) && !diagBusy()) void renderDiag($('tab-diag'), ctx);
     }

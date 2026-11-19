@@ -89,7 +89,7 @@ function liveSections(l: LiveState): HTMLElement[] {
   const s = l.strategy, note = l.decision?.strategy;
   if (s) {
     out.push(section('strategy', 'Strategy engine and opponent model', s.selected === 'v3', dl([
-      ['Selected', `${s.selected}${s.experimental ? ' (experimental, recommendation-only)' : s.selected === 'v2' ? ' (default)' : ''}`],
+      ['Selected', `${s.selected}${s.experimental ? (s.v3Execution ? ' (experimental, execution permission on)' : ' (experimental, recommendation-only)') : s.selected === 'v2' ? ' (default)' : ''}`],
       ['Shown recommendation decided by', note ? `${note.used}${note.fallback ? ` (fallback: ${note.fallback})` : ''}` : '–'],
       ['Opponent-response model', note?.opponentModel ?? (note ? (note.used === 'v3' ? '–' : `${note.used}'s range-aware behaviour model (heuristic)`) : '–')],
       ['Fitted tables used', note?.calibration ? `population calibration ${note.calibration.population}; river range tilt ${note.calibration.river}${note.calibration.notes.length ? ` (${note.calibration.notes.join('; ')})` : ''}` : '–'],

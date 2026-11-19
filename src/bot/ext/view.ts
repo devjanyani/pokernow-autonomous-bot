@@ -193,7 +193,8 @@ export function strategyTag(l: LiveState | null): { text: string; tone: Tone; de
   const s = l.strategy;
   const name = ENGINE_NAMES[s.selected] ?? s.selected;
   const note = l.decision?.strategy;
-  const ro = s.recommendOnly ? ' Recommendation-only: nothing is clicked while it is selected.' : '';
+  const ro = s.recommendOnly ? ' Recommendation-only: nothing is clicked while it is selected.'
+    : s.v3Execution ? ` Experimental version 3 execution permission is on: ${l.acting ? 'acting on this authorised table' : `not acting here (${l.execution?.reason ?? 'not permitted'})`}.` : '';
   if (note && note.requested !== note.used) {
     return { text: `${s.selected} → ${note.used} fallback`, tone: 'warn', fallback: true, detail: `${name} selected; this recommendation came from ${ENGINE_NAMES[note.used] ?? note.used}: ${note.fallback ?? 'no reason given'}.${ro}` };
   }
@@ -202,6 +203,44 @@ export function strategyTag(l: LiveState | null): { text: string; tone: Tone; de
     return { text: 'v3 experimental', tone: 'accent', fallback: false, detail: `${name}.${model}${ro}` };
   }
   return { text: s.selected, tone: 'muted', fallback: false, detail: `${name}${s.selected === 'v2' ? ' (default)' : ''}.${s.shadowV3 ? ' Shadow comparison with version 3 is on (diagnostic only).' : ''}` };
+}
+
+const sec = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/** Whether execution is enabled on this table, in one line. */
+export function executionLine(l: LiveState | null): { text: string; tone: Tone } | null {
+  if (!l || !l.execution) return null;
+  const v3 = l.strategy?.selected === 'v3';
+  return l.execution.enabled
+    ? { text: `Execution enabled${v3 ? ' (version 3, experimental)' : ''}`, tone: 'warn' }
+    : { text: `Execution off: ${l.execution.reason}`, tone: 'muted' };
+}
+
+/**
+ * Authorised-play scheduling: the pending action and its remaining delay, the policy, the last cancellation and the
+ * last executed action with its timing (computation and intentional waiting shown separately).
+ */
+export function scheduleRows(l: LiveState | null): [string, string][] {
+  const sc = l?.schedule;
+  if (!l || !sc) return [];
+  const p = sc.policy;
+  const rows: [string, string][] = [
+    ['Execution', executionLine(l)?.text ?? '–'],
+    ['Timing policy', `${p.randomDelay ? `random ${sec(p.minDelayMs)}–${sec(p.maxDelayMs)}` : `fixed ${sec(p.minDelayMs)}`} per decision, same for every action · act ≥ ${sec(p.deadlineMarginMs)} before the deadline · no clock shown: assume ${sec(p.assumedClockMs)}`],
+  ];
+  const q = sc.pending;
+  if (q) {
+    rows.push(['Pending action', `${q.label}${q.fallback ? ` (decided by ${q.decidedBy}: ${q.fallback})` : ` (decided by ${q.decidedBy})`} · ${q.state === 'executing' ? 'executing now' : `in ${sec(q.remainingMs)}`}`]);
+    rows.push(['Its timing', `drawn delay ${sec(q.targetDelayMs)} · computation ${sec(q.computeMs)} · deadline in ${sec(Math.max(0, q.deadlineInMs))} (${q.deadlineSource})`]);
+    if (q.conflict) rows.push(['Deadline conflict', q.conflict]);
+    else if (q.capped) rows.push(['Shortened', q.capped]);
+  } else rows.push(['Pending action', 'none']);
+  if (sc.lastCancel) rows.push(['Last cancelled', `${sc.lastCancel.label ?? 'pending action'}: ${sc.lastCancel.reason} (${sec(sc.lastCancel.agoMs)} ago)`]);
+  if (sc.lastExecuted) {
+    const e = sc.lastExecuted;
+    rows.push(['Last executed', `${e.label} · ${e.reason} · ${sec(e.delayMs)} after the turn was confirmed (computation ${sec(e.computeMs)}, waiting ${sec(e.waitedMs)})${e.conflict ? ` · deadline conflict: ${e.conflict}` : ''} · ${sec(e.agoMs)} ago`]);
+  }
+  return rows;
 }
 
 /** Shadow comparison rows (diagnostic only). EVs come from different value models and are not comparable. */

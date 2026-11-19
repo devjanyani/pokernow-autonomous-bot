@@ -21,8 +21,8 @@ export function popupView(s: Settings, table: string | null, nick: string): { st
   const other = s.authorizedTables.filter((t) => t !== table).length;
   return {
     state: s.estop ? 'Emergency stop is ON: nothing will be clicked.'
-      : acting ? 'ACTING automatically on this table.'
-        : s.mode === 'autonomous' && s.strategyEngine === 'v3' ? 'Autonomous selected, but strategy v3 (experimental) is recommendation-only: nothing is clicked.'
+      : acting ? `ACTING automatically on this table${s.strategyEngine === 'v3' ? ' with experimental version 3 (v2 for preflop and multiway)' : ''}.`
+        : s.mode === 'autonomous' && s.strategyEngine === 'v3' && !s.v3ExecutionOptIn ? 'Autonomous selected, but strategy v3 (experimental) is recommendation-only: nothing is clicked. Its separate execution permission is in Settings.'
           : s.mode === 'autonomous' ? (table ? 'Autonomous selected, but this table is not authorised: recommending only.' : 'Autonomous selected. No table is open.')
             : s.mode === 'recommend' ? `Recommending only${s.strategyEngine === 'v3' ? ' (strategy v3, experimental)' : ''}. Nothing is clicked.` : 'Observing only.',
     tone: s.estop ? 'bad' : acting ? 'warn' : s.mode === 'manual' ? '' : 'good',
@@ -63,7 +63,7 @@ async function init(): Promise<void> {
   $('auth').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
     // Withdrawing the confirmation withdraws every authorisation with it.
-    void save(on ? { authorizationConfirmed: true } : { authorizationConfirmed: false, authorizedTables: [] });
+    void save(on ? { authorizationConfirmed: true } : { authorizationConfirmed: false, authorizedTables: [], v3ExecutionOptIn: false });
   });
   $('allow').addEventListener('click', () => { const t = tableId; if (t) void save((cur) => ({ authorizedTables: cur.authorizedTables.includes(t) ? cur.authorizedTables : [...cur.authorizedTables, t] })); });
   $('revoke').addEventListener('click', () => { const t = tableId; void save((cur) => ({ authorizedTables: cur.authorizedTables.filter((x) => x !== t) })); });
