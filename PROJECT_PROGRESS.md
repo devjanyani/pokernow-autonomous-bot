@@ -1,10 +1,23 @@
 # Project progress
 
-Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.2.
+Last updated: 2026-11-19. Branch `autonomous-bot`. Version 0.9.0.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-18, version 0.8.2)
+## Checkpoint (2026-11-19, version 0.9.0)
+
+- Branch `autonomous-bot`, version 0.9.0, pushed to remote `private`. `dist/` is built at 0.9.0.
+- Phase 2.5 completed: the final held-out set (seed 13300) was run once, untouched. Calibrated version 3 (v3pr) minus
+  version 2: +1.1 ± 11.4 bb/100, level. The river tilt alone is significantly worse (−5.6 ± 3.7). Better prediction of
+  real players is not better play against the benchmark programs.
+- Version 3 is selectable in Settings as **"v3 — Experimental (recommendation-only)"**. It uses the validated
+  population calibration (model D) and river tilt, falls back to version 2 preflop, multiway and on failure (shown on
+  the dashboard), and never clicks (`mayAct()` false). Version 2 stays the default; nobody is switched. Optional shadow
+  comparison, off by default.
+- Validated in Chromium against the local stand-in table only (27/27, 32/32, 24/24), not on the live site.
+- Accounts: [reports/V3_EXTENSION_INTEGRATION.md](reports/V3_EXTENSION_INTEGRATION.md), [docs/bot/V3_IN_THE_EXTENSION.md](docs/bot/V3_IN_THE_EXTENSION.md), [reports/PHASE_2_5_STRATEGY_BENCHMARK.md](reports/PHASE_2_5_STRATEGY_BENCHMARK.md).
+
+## Previous checkpoint (2026-11-18, version 0.8.2)
 
 - Branch `autonomous-bot`, version 0.8.2, pushed to remote `private`. `dist/` is built at 0.8.2.
 - Done in this version: Phase 2.5. The first real hand histories were used: 89,170 cash hands from the MIT-licensed
@@ -12,8 +25,7 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
   provenance record. Fitted opponent models beat the hand-set one on held-out data. River ranges were found too
   strong and partly corrected. The river fold failure was diagnosed. Two experimental version 3 options were added.
 - **No production behaviour changed.** Version 2 is the default; version 3 and its new options are offline only.
-- **Open:** the final held-out benchmark (seed 13300) was stopped by a low-memory condition and has not been run:
-  `npm run bot:phase25 -- --bench --seed 13300 --jobs 1`.
+- The final held-out benchmark (seed 13300) was stopped by a low-memory condition here; it was run in 0.9.0.
 - Accounts: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md), [reports/PHASE_2_5_CALIBRATION.md](reports/PHASE_2_5_CALIBRATION.md), [reports/PHASE_2_5_STRATEGY_BENCHMARK.md](reports/PHASE_2_5_STRATEGY_BENCHMARK.md).
 
 ## Previous checkpoint (2026-11-18, version 0.8.1)
@@ -54,7 +66,9 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 
 ## Where things stand
 
-**0.8.2 (latest): Phase 2.5, opponent learning from real hands.** 89,170 real 2009 cash hands show that the hand-set opponent model over-predicts folding, above all when raised, and that river betting ranges are estimated too strong. Fitted models predict significantly better; inside version 3 they do not yet play measurably better against the simulated opponents. Details: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md).
+**0.9.0 (latest): version 3 as an experimental, recommendation-only option.** The Phase 2.5 final set shows calibrated version 3 level with version 2 (+1.1 ± 11.4 bb/100). It can be tried in Settings; it never clicks, and preflop and multiway spots fall back to version 2. Details: [V3_EXTENSION_INTEGRATION.md](reports/V3_EXTENSION_INTEGRATION.md).
+
+**0.8.2: Phase 2.5, opponent learning from real hands.** 89,170 real 2009 cash hands show that the hand-set opponent model over-predicts folding, above all when raised, and that river betting ranges are estimated too strong. Fitted models predict significantly better; inside version 3 they do not yet play measurably better against the simulated opponents. Details: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md).
 
 **0.8.1: Phase 2.4.** Version 3's over-raising came from opponent knobs that read Hero's own range selection as a trait of the player; they are now calibrated against the model's own predictions. Version 3 is now level with version 2 on fresh seeds but not better, so it stays offline. Details: [PHASE_2_4_MODEL_CALIBRATION.md](docs/bot/PHASE_2_4_MODEL_CALIBRATION.md).
 
