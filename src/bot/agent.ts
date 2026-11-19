@@ -18,9 +18,10 @@ import { PostflopSolver, PostflopResult } from './strategy/postflop';
 import { PostflopSolverV1 } from './strategy/postflop-v1';
 import { addCalib, Calibration, CalibKey, knobsFor } from './strategy/v3/model';
 import { PopulationCalibration, RiverRangeCalibration, tiltRiverRange } from './strategy/v3/empirical';
+import { ArtifactStatus, spotSupport } from './strategy/v3/artifacts';
 import { PostflopSearchV3, V3Detail } from './strategy/v3/search';
 import { analyseSpot, describeSpot, SpotInfo } from './strategy/spot';
-import { Candidate, Decision } from './strategy/types';
+import { CalibrationUse, Candidate, Decision, EngineName, StrategyNote } from './strategy/types';
 import { buildTable, FeatureCache } from './strategy/villains';
 import { defaultLibrary } from './strategy/library/builtin';
 import {
@@ -51,11 +52,20 @@ export interface AgentOptions {
   /** Version 3: also evaluate the chosen action under two other opponent models (three times the evaluation work). Default true. */
   v3Sensitivity?: boolean;
   /**
-   * Phase 2.5, experimental and offline only (the extension never sets them): population corrections of version 3's
-   * opponent responses and a tilt of the river bettor's range, both fitted to real cash-game hands (strategy/v3/empirical.ts).
+   * Phase 2.5: population corrections of version 3's opponent responses and a tilt of the river bettor's range, both
+   * fitted to real cash-game hands (strategy/v3/empirical.ts). The extension passes them only when the packaged
+   * tables pass their checks (strategy/v3/artifacts.ts loadV3Artifacts).
    */
   v3Population?: PopulationCalibration;
   v3RiverRange?: RiverRangeCalibration;
+  /**
+   * Extension: apply the fitted tables only where the data they were fitted on covers the spot (artifacts.ts
+   * spotSupport); elsewhere version 3 uses its uncalibrated baseline and says so. Off by default, so the offline
+   * benchmarks of Phase 2.5 are reproduced exactly.
+   */
+  v3SpotChecks?: boolean;
+  /** Extension: the load status of the fitted tables, quoted when one is missing or was rejected. */
+  v3ArtifactStatus?: ArtifactStatus[];
   /** Diagnostics only (offline tools): called with every version 3 search and the decision made from it. */
   onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
 }
@@ -99,8 +109,12 @@ export class BotAgent {
   private readonly onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
   private readonly v3Population?: PopulationCalibration;
   private readonly v3RiverRange?: RiverRangeCalibration;
+  private readonly v3SpotChecks: boolean;
+  private readonly v3ArtifactStatus: ArtifactStatus[];
   /** What the empirical corrections changed in the last version 3 search (for the explanation). */
   private v3EmpiricalNote: string[] = [];
+  /** Whether each fitted table was used in the last version 3 search, and why not. */
+  private v3CalibUse: NonNullable<StrategyNote['calibration']> = { population: 'unavailable', river: 'unavailable', notes: [] };
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
@@ -112,11 +126,22 @@ export class BotAgent {
     this.onV3Search = opts.onV3Search;
     this.v3Population = opts.v3Population;
     this.v3RiverRange = opts.v3RiverRange;
+    this.v3SpotChecks = opts.v3SpotChecks ?? false;
+    this.v3ArtifactStatus = opts.v3ArtifactStatus ?? [];
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
   /** Record a completed hand in the opponent profiles (idempotent per hand id). */
   observeHand(h: HandState, reveals: Map<number, [CardId, CardId]> = new Map(), now = 0): string[] {
+    this.observeV3Responses(h);
+    return applyHandToProfiles(this.profiles, h, reveals, now);
+  }
+
+  /**
+   * Only the version 3 residual calibration from a completed hand (the opponent's answer to Hero's bets and raises),
+   * without touching the profiles: for a second agent that shares the profiles of the first (shadow comparison).
+   */
+  observeV3Responses(h: HandState): void {
     for (const [id, p] of this.v3Pending) {
       if (!id.startsWith(`${h.handId}:`)) continue;
       const mine = h.events[p.ev];
@@ -130,8 +155,10 @@ export class BotAgent {
       }
     }
     this.v3Pending.clear();
-    return applyHandToProfiles(this.profiles, h, reveals, now);
   }
+
+  /** The engine asked for on this street. */
+  private requested(h: HandState): EngineName { return h.street === 'preflop' ? this.preflopEngine : this.postflopEngine; }
 
   private prepare(h: HandState, heroSeat: number, heroCards: [CardId, CardId]) {
     const la = legalActions(h, heroSeat);
@@ -148,7 +175,7 @@ export class BotAgent {
 
   private finish(
     h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, candidates: Candidate[], chosen: number,
-    extra: Pick<Decision, 'equity' | 'basis' | 'adjustments' | 'evGap' | 'evGapSe' | 'samples' | 'provisional'> & { lowConfidence?: boolean }, t0: number,
+    extra: Pick<Decision, 'equity' | 'basis' | 'adjustments' | 'evGap' | 'evGapSe' | 'samples' | 'provisional'> & { lowConfidence?: boolean; fallback?: string }, t0: number,
   ): Decision {
     let pick = candidates[chosen];
     let input: ActionInput = { seat: heroSeat, kind: pick.action, to: pick.to };
@@ -197,6 +224,14 @@ export class BotAgent {
     for (const v of poor) basis.push(`model-dependent: ${v.name}'s betting line is poorly explained by the behaviour model (${(100 * v.retained).toFixed(1)}% of the starting range fits it), so part of the starting range was kept`);
     const lower = !prep.legacy && (spot.offRange || extra.lowConfidence === true || poor.length > 0);
     if (lower) uncertainty += ' Lower confidence: see the notes marked out-of-distribution or model-dependent.';
+    // Which engine decided. Version 3 decisions overwrite this in decisionV3; anything reaching here with version 3
+    // requested is a fallback, and the reason is stated.
+    const requested = this.requested(h);
+    const used: EngineName = prep.legacy ? 'v1' : 'v2';
+    const strategy: StrategyNote = {
+      requested, used,
+      fallback: requested === 'v3' ? (h.street === 'preflop' ? 'preflop: version 3 has no preflop engine, so version 2\'s preflop charts and ranges decided' : extra.fallback ?? 'version 3 not used; version 2 decided') : null,
+    };
     return {
       action: input.kind, to: input.to, label: pick.label, street: h.street, candidates,
       equity: extra.equity,
@@ -204,6 +239,7 @@ export class BotAgent {
       adjustments, basis, uncertainty, evGap: extra.evGap, evGapSe: extra.evGapSe,
       counts: prep.counts, mode: prep.mode, samples: extra.samples, computeMs: this.now() - t0, provisional: extra.provisional,
       ...(prep.legacy ? {} : { spot, confidence: lower ? 'lower' as const : 'normal' as const, engine: 'v2' as const }),
+      strategy,
     };
   }
 
@@ -226,17 +262,29 @@ export class BotAgent {
     const seed = prep.rng.int(1 << 30);
     const knobs = knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight, this.v3Calibration.get(v.playerId));
     this.v3EmpiricalNote = [];
-    if (this.v3Population) {
+    const use: { population: CalibrationUse; river: CalibrationUse; notes: string[] } = { population: 'unavailable', river: 'unavailable', notes: [] };
+    const why = (name: ArtifactStatus['name']) => { const s = this.v3ArtifactStatus.find((x) => x.name === name); return s && s.state !== 'loaded' ? `${s.state}: ${s.reason}` : 'not supplied'; };
+    const support = this.v3SpotChecks ? spotSupport(prep.counts.headsUpTable) : { ok: true, reason: null };
+    if (!this.v3Population) use.notes.push(`population calibration unavailable (${why('population-calibration')}): the hand-set response model is used uncalibrated`);
+    else if (!support.ok) { use.population = 'not applicable'; use.notes.push(`population calibration not applied (${support.reason}): the hand-set response model is used uncalibrated`); }
+    else {
+      use.population = 'applied';
       knobs.population = this.v3Population;
       this.v3EmpiricalNote.push(`empirical (${this.v3Population.source}): the opponent's fold, call, raise and bet probabilities include population corrections fitted to real cash-game hands against this model's own predictions; the response functions themselves are hand-set`);
     }
-    if (this.v3RiverRange && h.street === 'river' && prep.la.callAmount > 0 && h.aggressor.river === v.seat) {
+    const facingRiverBet = h.street === 'river' && prep.la.callAmount > 0 && h.aggressor.river === v.seat;
+    if (!this.v3RiverRange) use.notes.push(`river range tilt unavailable (${why('river-range')})`);
+    else if (!facingRiverBet) use.river = 'not applicable';
+    else if (!support.ok) { use.river = 'not applicable'; use.notes.push(`river range tilt not applied (${support.reason}): version 2's river range is used`); }
+    if (this.v3RiverRange && facingRiverBet && support.ok) {
+      use.river = 'applied';
       const betTurn = h.events.some((e) => e.street === 'turn' && e.seat === v.seat && (e.kind === 'bet' || e.kind === 'raise'));
       const frac = prep.la.callAmount / Math.max(1e-9, potTotal(h) - prep.la.callAmount);
       const t = tiltRiverRange(this.v3RiverRange, v.range, this.cache.get(h.board).hs, frac, betTurn);
       v = { ...v, range: t.range };
       this.v3EmpiricalNote.push(`empirical (${this.v3RiverRange.source}): the bettor's river range is version 2's estimate re-weighted by hand strength as fitted to revealed holdings of called river bets (cell ${t.cell}); value / bluff composition is a model hypothesis`);
     }
+    this.v3CalibUse = use;
     try {
       return new PostflopSearchV3(h, heroSeat, heroCards, v, knobs, this.cache.get(h.board), seed, prep.heroPerceived);
     } catch (e) { return `search not built: ${(e as Error).message}`; }
@@ -248,7 +296,7 @@ export class BotAgent {
       : new PostflopSolver(h, heroSeat, heroCards, prep.villains, this.cache.get(h.board), seed, prep.heroPerceived);
   }
 
-  private postflopDecision(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, solver: PostflopSolver | PostflopSolverV1, provisional: boolean, t0: number): Decision {
+  private postflopDecision(h: HandState, heroSeat: number, prep: ReturnType<BotAgent['prepare']>, solver: PostflopSolver | PostflopSolverV1, provisional: boolean, t0: number, fallback?: string): Decision {
     const res = solver.result();
     // Sample the mix with a fixed draw so refinement does not flip-flop on the random number.
     let r = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, 7)).next();
@@ -297,7 +345,7 @@ export class BotAgent {
       basis.push(`model-dependent: under the modelled responses alone "${alt.label}" would be best (${chips(alt.evModel ?? alt.ev ?? 0)} chips); it is not chosen because it is worth ${chips(alt.ev ?? 0)} against opponents who fold less often`);
     }
     return this.finish(h, heroSeat, prep, res.candidates, chosen, {
-      equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional, lowConfidence,
+      equity: res.equity, basis, adjustments: [], evGap: res.evGap, evGapSe: res.evGapSe, samples: res.samples, provisional, lowConfidence, fallback,
     }, t0);
   }
 
@@ -331,7 +379,7 @@ export class BotAgent {
       }
     }
     basis.push(`model uncertainty: decided against a mixture of opponents Hero cannot tell apart: ${d.mixture.map((m) => `${pct(m.weight)} ${m.name}`).join(', ')} (the share of the two deviations shrinks as this opponent's own responses are observed)`);
-    basis.push(...this.v3EmpiricalNote);
+    basis.push(...this.v3EmpiricalNote, ...this.v3CalibUse.notes);
     for (const s of d.sensitivity) basis.push(`opponent-model sensitivity: if the opponent ${s.scenario === 'as modelled' ? 'plays exactly as modelled' : s.scenario}, the chosen action is worth ${chips(s.evOfChosen)} chips and the best would be "${s.best}" (${chips(s.evBest)})`);
     const ev = search.cfg;
     void ev;
@@ -345,7 +393,11 @@ export class BotAgent {
       if (curve) this.v3Pending.set(`${h.handId}:${h.events.length}`, { playerId: prep.villains[0].playerId, oppSeat: prep.villains[0].seat, heroSeat, ev: h.events.length, ...curve });
     }
     for (const e of knobs.evidence) dd.adjustments.push(`learned (version 3): ${prep.villains[0].name}: ${e}`);
-    return { ...dd, engine: 'v3' };
+    const cal = { ...this.v3CalibUse, notes: this.v3CalibUse.notes.slice() };
+    const opponentModel = cal.population === 'applied'
+      ? `version 3's hand-set response model with the population calibration (model D) fitted to real cash-game hands (${this.v3Population?.source ?? '?'})`
+      : 'version 3\'s hand-set response model, uncalibrated (baseline)';
+    return { ...dd, engine: 'v3', strategy: { requested: 'v3', used: 'v3', fallback: null, opponentModel, calibration: cal } };
   }
 
   /** Fully synchronous decision with a fixed sample count (simulator, tests). */
@@ -353,10 +405,13 @@ export class BotAgent {
     const t0 = this.now();
     const prep = this.prepare(h, heroSeat, heroCards);
     if (h.street === 'preflop') return this.preflop(h, heroSeat, heroCards, prep, t0);
-    const v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
-    if (typeof v3 !== 'string') { v3.run(samples); const d = this.decisionV3(h, heroSeat, prep, v3, false, t0, this.v3Sensitivity); this.onV3Search?.(v3, d); return d; }
+    let v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
+    if (typeof v3 !== 'string') {
+      try { v3.run(samples); const d = this.decisionV3(h, heroSeat, prep, v3, false, t0, this.v3Sensitivity); this.onV3Search?.(v3, d); return d; }
+      catch (e) { v3 = `version 3 failed (${(e as Error).message})`; }
+    }
     const solver = this.newSolver(h, heroSeat, heroCards, prep);
-    if (this.postflopEngine === 'v3') { solver.run(samples); const d = this.postflopDecision(h, heroSeat, prep, solver, false, t0); d.basis.push(`version 3 not used: ${v3}; version 2 decided`); return d; }
+    if (this.postflopEngine === 'v3') { solver.run(samples); const why = `version 3 not used: ${v3}; version 2 decided`; const d = this.postflopDecision(h, heroSeat, prep, solver, false, t0, why); d.basis.push(why); return d; }
     solver.run(samples);
     return this.postflopDecision(h, heroSeat, prep, solver, false, t0);
   }
@@ -368,17 +423,27 @@ export class BotAgent {
    */
   async decide(h: HandState, heroSeat: number, heroCards: [CardId, CardId], opts: DecideOptions = {}): Promise<Decision> {
     const t0 = this.now();
-    const cancelled = opts.isCancelled ?? (() => false);
     const prep = this.prepare(h, heroSeat, heroCards);
     if (h.street === 'preflop') {
       const d = this.preflop(h, heroSeat, heroCards, prep, t0);
       opts.onProgress?.(d);
       return d;
     }
-    const v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
-    if (typeof v3 !== 'string') return this.decideV3(h, heroSeat, prep, v3, opts, t0);
+    let v3 = this.newSearchV3(h, heroSeat, heroCards, prep);
+    if (typeof v3 !== 'string') {
+      // A failure inside version 3 falls back to version 2 for this decision (stated in the explanation); a
+      // cancellation is passed on unchanged.
+      try { return await this.decideV3(h, heroSeat, prep, v3, opts, t0); }
+      catch (e) { if (e instanceof DecisionCancelled) throw e; v3 = `version 3 failed (${(e as Error).message})`; }
+    }
+    return this.decideV2(h, heroSeat, heroCards, prep, opts, t0, this.postflopEngine === 'v3' ? `version 3 not used: ${v3}; version 2 decided` : null);
+  }
+
+  /** Anytime loop for version 2 (and for version 1, and for version 3's fallback). */
+  private async decideV2(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>, opts: DecideOptions, t0: number, fallbackNote: string | null): Promise<Decision> {
+    const cancelled = opts.isCancelled ?? (() => false);
     const solver = this.newSolver(h, heroSeat, heroCards, prep);
-    const fallbackNote = this.postflopEngine === 'v3' ? `version 3 not used: ${v3}; version 2 decided` : null;
+    const fb = fallbackNote ?? undefined;
     const pot = potTotal(h);
     const budget = planBudget({
       timeRemainingMs: opts.timeRemainingMs ?? null, street: h.street, potBB: pot / h.bigBlind,
@@ -387,7 +452,9 @@ export class BotAgent {
     });
     if (opts.fixedSamples) {
       solver.run(opts.fixedSamples);
-      return this.postflopDecision(h, heroSeat, prep, solver, false, t0);
+      const d = this.postflopDecision(h, heroSeat, prep, solver, false, t0, fb);
+      if (fallbackNote) d.basis.push(fallbackNote);
+      return d;
     }
     let first = true;
     for (;;) {
@@ -396,7 +463,7 @@ export class BotAgent {
       const res = solver.result();
       const stop = shouldStop(budget, { elapsedMs: this.now() - t0, samples: res.samples, separated: res.separated, evGap: res.evGap, evGapSe: res.evGapSe, potChips: pot });
       if (first || stop.stop) {
-        const d = this.postflopDecision(h, heroSeat, prep, solver, !stop.stop, t0);
+        const d = this.postflopDecision(h, heroSeat, prep, solver, !stop.stop, t0, fb);
         if (fallbackNote) d.basis.push(fallbackNote);
         if (stop.stop) { d.basis.push(`time: stopped after ${res.samples} samples (${stop.reason}); budget soft ${budget.softMs.toFixed(0)}ms / hard ${budget.hardMs.toFixed(0)}ms, importance ${budget.importance.toFixed(2)}`); opts.onProgress?.(d); return d; }
         opts.onProgress?.(d);
@@ -424,6 +491,9 @@ export class BotAgent {
       const res = search.result(2.5, false);
       const stop = shouldStop(budget, { elapsedMs: this.now() - t0, samples: res.samples, separated: res.separated, evGap: res.evGap, evGapSe: res.evGapSe, potChips: pot });
       if (stop.stop || res.samples >= 2400) {
+        // The final evaluation (with the sensitivity scenarios) is the longest piece of synchronous work: give the
+        // page a turn first, and drop it if the decision point changed meanwhile.
+        if (opts.yieldFn) { await opts.yieldFn(); if (cancelled()) throw new DecisionCancelled(); }
         const d = this.decisionV3(h, heroSeat, prep, search, false, t0, this.v3Sensitivity);
         d.basis.push(`time: stopped after ${res.samples} deals (${stop.stop ? stop.reason : 'deal cap'}); budget soft ${budget.softMs.toFixed(0)}ms / hard ${budget.hardMs.toFixed(0)}ms`);
         opts.onProgress?.(d);

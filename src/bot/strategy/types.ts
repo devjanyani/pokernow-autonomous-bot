@@ -61,4 +61,18 @@ export interface Decision {
   /** 'lower' when the decision is out-of-distribution or rests mainly on the heuristic fold model. */
   confidence?: 'normal' | 'lower';
   engine?: 'v2' | 'v3';
+  /** Which engine was asked for, which one decided, and why they differ (set by BotAgent for every decision). */
+  strategy?: StrategyNote;
+}
+
+export type EngineName = 'v1' | 'v2' | 'v3';
+export type CalibrationUse = 'applied' | 'not applicable' | 'unavailable';
+export interface StrategyNote {
+  requested: EngineName;
+  used: EngineName;
+  /** Why the requested engine did not decide this spot (null when it did). */
+  fallback: string | null;
+  /** Version 3 decisions only: the opponent-response model and the fitted tables, with the reason when one was not used. */
+  opponentModel?: string;
+  calibration?: { population: CalibrationUse; river: CalibrationUse; notes: string[] };
 }
