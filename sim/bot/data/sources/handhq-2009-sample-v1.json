@@ -1,0 +1,623 @@
+{
+ "id": "handhq-2009-sample-v1",
+ "name": "HandHQ online cash-game hand histories (sample), from the PHH dataset",
+ "kind": "human-hands",
+ "origin": "https://github.com/uoftcprg/phh-dataset (data/handhq), commit e47fbd5816372360bade4de5d712346fe1bb70f6",
+ "licence": "MIT (the phh-dataset repository: Copyright (c) 2024-2025 Universal, Open, Free, and Transparent Computer Poker Research Group)",
+ "licenceNotes": "The repository is MIT-licensed and documents these files as anonymized hand history logs scraped from July 1 to 23, 2009 and uploaded by HandHQ. The rights of the original poker sites or players in the underlying logs are not stated by the repository; player names are replaced by hashes. Used here offline, for aggregate statistics only: no hand, player hash or raw file is committed or redistributed, and nothing is sent anywhere.",
+ "access": "needs-approval",
+ "approvedBy": "user instruction (Phase 2.5 brief: discover, verify and download PHH cash-game datasets)",
+ "approvedOn": "2026-11-18",
+ "retrieved": "2026-11-19",
+ "population": "Online no-limit hold'em cash games, July 1-25 2009: PokerStars 200NL, iPoker Network 100NL and 200NL, Absolute Poker 100NL; 6-max and full-ring tables (heads-up tables excluded); human players.",
+ "labelSemantics": "human-action",
+ "caveats": [
+  "Heads-up tables are excluded: the conversion lists p1 as small blind but p2 acts first before the flop, so blinds or order are wrong.",
+  "iPoker files do not record stacks (written inf): replayed with 1,000 big blinds each, flagged stacksUnknown, stack-to-pot ratio missing.",
+  "Hole cards are known only when shown at showdown (or written in the deal line for a showdown hand): a selected sample, never used as known otherwise.",
+  "Online play from 2009: population behaviour may differ from present-day PokerNow games; rake and site rules are not recorded per hand.",
+  "Players are anonymised hashes; nothing about individuals is inferred or kept outside data/."
+ ],
+ "files": [
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1-OBFUSCATED.phhs",
+   "sha256": "7a7fcfd0714508122dbb3d7dc91bfcc8df9042fb645841a6cd1dfac27d764b8c",
+   "bytes": 750866
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_42-OBFUSCATED.phhs",
+   "sha256": "b8d177a52eb6e5d4f24f67d7404c25e08a4c16709cf4d680b0b952e5f2b94921",
+   "bytes": 689794
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_84-OBFUSCATED.phhs",
+   "sha256": "8bc78bf14718b003b2a96b13b1809392a14cde7b0a4af6158de1b4df67fe744e",
+   "bytes": 794414
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_125-OBFUSCATED.phhs",
+   "sha256": "ccdd7502a7f5b61e91a112232569968b7717518440bb9b3a5cef1c6f960fcb7f",
+   "bytes": 704832
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_166-OBFUSCATED.phhs",
+   "sha256": "ac6ae9a6c666bc8ca0d941b00fe1b2bfe684aa0350cf9261f137e566b578cb3a",
+   "bytes": 700805
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_207-OBFUSCATED.phhs",
+   "sha256": "b4fedca35725f487ae477acd3e62ab655f29a3f13c0c5c23e05be999c55653eb",
+   "bytes": 698734
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_249-OBFUSCATED.phhs",
+   "sha256": "ebc68ae29b90ea8bea5f932aef2bf0fdb631988b01a34bee555078baafbb2042",
+   "bytes": 748524
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_290-OBFUSCATED.phhs",
+   "sha256": "b94ad9b397d00df71272f74a517b54c31a5160eca453ea560f888e9d32d0749a",
+   "bytes": 717583
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_331-OBFUSCATED.phhs",
+   "sha256": "c92f8084e9042deef42df42e9bf1cd0f6f2302df2b4d2d9a3171171b0e94315a",
+   "bytes": 669456
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_372-OBFUSCATED.phhs",
+   "sha256": "5d2ee962ae6348cb29f784165edcf926b1b2ff313ed059703d66c4ef2f476644",
+   "bytes": 687287
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_414-OBFUSCATED.phhs",
+   "sha256": "370a826e6984de3a099bcf71a05f56e414b9caf374a55f73b9a8d67d11107c68",
+   "bytes": 704461
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_455-OBFUSCATED.phhs",
+   "sha256": "a0370b1c4a23d91f56384b50d6e050a5f2edefc4311d49150fe3fdc55e237bda",
+   "bytes": 723100
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_496-OBFUSCATED.phhs",
+   "sha256": "2cb856ed98a0e6a4f9c783d5a611f3f1b5fe0ff3c9959d74546321aae9e0c382",
+   "bytes": 731775
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_538-OBFUSCATED.phhs",
+   "sha256": "b0b6c1da45362a258911011e7fb44edd58d718c5bdfe4d71a1c9b19ba6363709",
+   "bytes": 688625
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_579-OBFUSCATED.phhs",
+   "sha256": "e2548f44ea4474a43e27eba4f0c85142af5424e6878eacf063f95116c1b68cdb",
+   "bytes": 787101
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_620-OBFUSCATED.phhs",
+   "sha256": "c954c32f7a01369613b7318a49ff8714b6bfa5076944d239df9f742b6aef8b07",
+   "bytes": 714953
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_661-OBFUSCATED.phhs",
+   "sha256": "8486d1f949fa831d8a20e37f4e4b9b85600d055b50881cea955ca45a8709dede",
+   "bytes": 788372
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_703-OBFUSCATED.phhs",
+   "sha256": "e8426534d8e46b7ca946eebc687228bc34d73a07288b7d726afdaa08740f2f67",
+   "bytes": 787326
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_744-OBFUSCATED.phhs",
+   "sha256": "fc5d8ce82f662d9228e8715bc2b0bfb9b1d40c111267f370f6e4d397428185c4",
+   "bytes": 707540
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_785-OBFUSCATED.phhs",
+   "sha256": "f3390806cd8f822901cff89d529f997ac5f8938aec85e8a1cc37e0c57d2ab524",
+   "bytes": 762528
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_827-OBFUSCATED.phhs",
+   "sha256": "cdb30e57cffe6fa51449c70b572d6700fe2dad47b4ce93cd854a533921ee3318",
+   "bytes": 780407
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_868-OBFUSCATED.phhs",
+   "sha256": "db62f254f4648c8c63a2347ab31c7c464ebe6c31957a7c8be5d8f01332fc8820",
+   "bytes": 713515
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_909-OBFUSCATED.phhs",
+   "sha256": "4af404f9c27a25103d72034a8ae3562abe05d3993cabaa2fd655a232e86f8fd8",
+   "bytes": 715930
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_950-OBFUSCATED.phhs",
+   "sha256": "730b18e0111041e2159ca29a571fd756ae44a33e08781c6df80f7587f32ba458",
+   "bytes": 680733
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_992-OBFUSCATED.phhs",
+   "sha256": "129e284d575d5b7f93bc823bdd1797e10d9eedc02d04781621377d992ab84c1e",
+   "bytes": 745361
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1033-OBFUSCATED.phhs",
+   "sha256": "363424f797f1d2e18a82ea01657c12f5a6ae9e9feea32227eb18d73e478ea6ad",
+   "bytes": 784270
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1074-OBFUSCATED.phhs",
+   "sha256": "4b19416845a7620a6c9a7b021d4171f316b9b9207ec7fc86e280f8b0f3cc6dda",
+   "bytes": 779155
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1115-OBFUSCATED.phhs",
+   "sha256": "1a904a585d99b3102188f1797f274a4c6c362cc59412d723f0fcfa8bc84f82fa",
+   "bytes": 760712
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1157-OBFUSCATED.phhs",
+   "sha256": "6946759aee5314d0b9b343df3ea10f3af2e1f37c58a2e136f2f6159dfdcd0fbf",
+   "bytes": 788260
+  },
+  {
+   "path": "phh-handhq/PS-2009-07-01_2009-07-23_200NLH_OBFU/2/ps NLH handhq_1198-OBFUSCATED.phhs",
+   "sha256": "e89cf2449b05a628099553c1b45a71c878c30c27a230feac2318922dd7fd4963",
+   "bytes": 484056
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1-OBFUSCATED.phhs",
+   "sha256": "1fbab9262778262c7f46352d278c5925b4a1a270e4dcdaf0d37492bfef700296",
+   "bytes": 694838
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_73-OBFUSCATED.phhs",
+   "sha256": "9795c8cad54a3ea7b1f067ec94f504a7e46a2fba05eefce1e52f4338e0ef6265",
+   "bytes": 562998
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_144-OBFUSCATED.phhs",
+   "sha256": "77d682938c5a2e1d7994c237a80c54813981e148445afce90426ea5caad1ec2e",
+   "bytes": 683462
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_216-OBFUSCATED.phhs",
+   "sha256": "3a5c512881f87ee7e90bc87293d2f32140e346aeafd71681bd5bf4bff69a2f44",
+   "bytes": 692048
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_288-OBFUSCATED.phhs",
+   "sha256": "0cab183b34cf3d74bb720191b48293f6e143860c28875b1ff3d294e6ccd56087",
+   "bytes": 685291
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_360-OBFUSCATED.phhs",
+   "sha256": "4ee289be542b26adb1b79afa6d93fb3d87f495b817fd3c29001b6207d8ee7b44",
+   "bytes": 730124
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_431-OBFUSCATED.phhs",
+   "sha256": "e482f19b39db338ab117b8b76c79a02d04a57073fbf5d0e47b15b34c0674f8f4",
+   "bytes": 709548
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_503-OBFUSCATED.phhs",
+   "sha256": "ebf2d4313142632e3cf1eec503c3ef9b4b2e37d45b28a2dfb6505d1e27f2ebe8",
+   "bytes": 665739
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_575-OBFUSCATED.phhs",
+   "sha256": "c67fa29980ad5628e20322cf5b2ec29f55e0c12213a26e9a5692b2a3f72726ba",
+   "bytes": 667510
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_647-OBFUSCATED.phhs",
+   "sha256": "1e6bdc9d4079154abb9f80d7544f8007e2c9cd8647e5ca44d2d4a71eb04d5027",
+   "bytes": 632742
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_718-OBFUSCATED.phhs",
+   "sha256": "4f6211ff14e1a7fdf3d7bed48e5c645bef95a0fa7a0b40ef51f502593cad2036",
+   "bytes": 744396
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_790-OBFUSCATED.phhs",
+   "sha256": "b661d6a9b20f465a08ab858092fdcd6d511cbf3a3f50ce2a2d6c57cf76bb1e06",
+   "bytes": 681636
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_862-OBFUSCATED.phhs",
+   "sha256": "49deb90ccfde79e46ca2a5399c9a1479fcb6d6b6217f4b5ecb232d542df4ff7a",
+   "bytes": 672787
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_933-OBFUSCATED.phhs",
+   "sha256": "9168f60230c70a29cc216db8141a12f2b08b5e4cb7bfb3e640ab2e7b5a1e7208",
+   "bytes": 669547
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1005-OBFUSCATED.phhs",
+   "sha256": "65b0f31a89a0175f350b68b4fa6e69b097475c82123be786b0d2763020c6c216",
+   "bytes": 712079
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1077-OBFUSCATED.phhs",
+   "sha256": "6c2dc9e423054175e0563d382aeb404877c562fe82121bc0da5f990c7e431450",
+   "bytes": 700861
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1149-OBFUSCATED.phhs",
+   "sha256": "8da3bc7f8f556b2437f2f4468c71f8f0a329158a3e98fef6dadb0461b79954ae",
+   "bytes": 637074
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1220-OBFUSCATED.phhs",
+   "sha256": "bfa95024b2ec5b835fc7bf27bf9dc11541f167743f693fd5a692d3258a63ddc0",
+   "bytes": 688019
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1292-OBFUSCATED.phhs",
+   "sha256": "f2b336350dd5a7f5b529acf8d42388f0ccbb3ddd18d1bdac00b8740dc7bdc006",
+   "bytes": 700743
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1364-OBFUSCATED.phhs",
+   "sha256": "3c8b6f227c172ede9a514439eef8a3eacbd22894f33882aff0b76b847892d7fe",
+   "bytes": 653275
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1435-OBFUSCATED.phhs",
+   "sha256": "0992717ce8d5585fef2c62438f363f0e74d207c5be621a6bb212b90c187e942e",
+   "bytes": 691044
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1507-OBFUSCATED.phhs",
+   "sha256": "6872d1ca67b080a0986ddbd230b76a2b7cc727eb847dcfa04e866d9dcae082c0",
+   "bytes": 686600
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1579-OBFUSCATED.phhs",
+   "sha256": "736fb270f993814c76857e69ffcf62580c50f65548dd1799c9443c688229bb98",
+   "bytes": 741500
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1651-OBFUSCATED.phhs",
+   "sha256": "c59c96c9ead11a635919857b130972c1043ce40b56530b5673768b46d29d882b",
+   "bytes": 617825
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1722-OBFUSCATED.phhs",
+   "sha256": "29c7edba26da86949821df94dc26e92100f37dd08e2cd2206619afba2993e5fa",
+   "bytes": 686822
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1794-OBFUSCATED.phhs",
+   "sha256": "28e0c9dd4c8f2fd515054e9b2e401bccd0e0d948ab3bf57946deda1ddfad279d",
+   "bytes": 710860
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1866-OBFUSCATED.phhs",
+   "sha256": "57e2ab12202e038d2cdaff7bf1ddef840aced4c3d681ff9522820c7f56e18aaa",
+   "bytes": 685606
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_1938-OBFUSCATED.phhs",
+   "sha256": "b38ee965b111655caed7ecff4279dbcc04678be94a148e92acd4f4774be92ed1",
+   "bytes": 613471
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_2009-OBFUSCATED.phhs",
+   "sha256": "3990589ff1759ec583c25b1c8c1dd744ecbecbe4478f8c7f3007a47f1ed0bf89",
+   "bytes": 704296
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_100NLH_OBFU/1/ipn NLH handhq_2081-OBFUSCATED.phhs",
+   "sha256": "11be84e0445b812cbe352dc5d6206a60332ecf2a7a2d5fe267c5747285836765",
+   "bytes": 328089
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1-OBFUSCATED.phhs",
+   "sha256": "4e25c6e19cb7fdbd468922b46aa4a625602ca2d3d4edd550a12cb86d448eb563",
+   "bytes": 676561
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_64-OBFUSCATED.phhs",
+   "sha256": "6b2b71fc436540352d5d3253239bc3d928c19bfd9b949faf5c4ea2873f8646ab",
+   "bytes": 571599
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_126-OBFUSCATED.phhs",
+   "sha256": "48a42ca807b8ddad1e0f82039cbe965a513bc3f54ded26f2a8572a577d5f2113",
+   "bytes": 716830
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_189-OBFUSCATED.phhs",
+   "sha256": "4aff32d4f66a09388d764b9eb74d5485c0832ddd074adc6c07b20675bd958110",
+   "bytes": 679629
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_252-OBFUSCATED.phhs",
+   "sha256": "5c0de3f647c1ec7528129bffd2a26f05b566bbdc21a0cda002356688a6890bfd",
+   "bytes": 632358
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_315-OBFUSCATED.phhs",
+   "sha256": "504d4379958dd010c6e880cefc3629023d5a85b30011911c8d1521074d970eda",
+   "bytes": 664256
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_377-OBFUSCATED.phhs",
+   "sha256": "611426d0109aacde6a8150ff5f9be24ce22c6bc2e49ae499538eeb400508dafb",
+   "bytes": 651549
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_440-OBFUSCATED.phhs",
+   "sha256": "af7ef24d77d77dda7219bab2549bbbb282d02929992c5ae357d0851635c4fc2b",
+   "bytes": 688594
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_503-OBFUSCATED.phhs",
+   "sha256": "2cb248301c69cb3ebb4a24ad9ddb4459be5622ae3eec0b867413d3d4a4a40b02",
+   "bytes": 689211
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_566-OBFUSCATED.phhs",
+   "sha256": "d905cc79849d5379663cd873340d39219afd15a70753267fbf67f424bfba3437",
+   "bytes": 673164
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_628-OBFUSCATED.phhs",
+   "sha256": "10cf61e02f2eaeed367021c85107bdf699178ba54a83d6486e4f6dcbab2b029a",
+   "bytes": 616995
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_691-OBFUSCATED.phhs",
+   "sha256": "17b570465a4dfff543b6c7bf99e6bb70c7dcb819bd463ecaa3efd8886a019bea",
+   "bytes": 712282
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_754-OBFUSCATED.phhs",
+   "sha256": "373b3a9786943abea9e373d9c2ad2c9e81f94bb20799bf14852f44dcd3f2d661",
+   "bytes": 629958
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_816-OBFUSCATED.phhs",
+   "sha256": "7117c5caa9d548e1cf48fb03d192e635ce8b4463a66f933ede5652fd006f4de4",
+   "bytes": 724753
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_879-OBFUSCATED.phhs",
+   "sha256": "4ac38244f91a22e032002f5ea7ac225c025b6201c7e0347212dd1961155d4809",
+   "bytes": 727727
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_942-OBFUSCATED.phhs",
+   "sha256": "22c78c03100aaffc1a986e3079e6768191c5b8bd33af6a6d8b0a4e0192c25f0a",
+   "bytes": 569256
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1005-OBFUSCATED.phhs",
+   "sha256": "fcf4ed6bff328cf506b482f28366ed6e3494982cbcd89d0269a05f5aac1d3afc",
+   "bytes": 746726
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1067-OBFUSCATED.phhs",
+   "sha256": "476eecc89731044cd956018589c7ea430c5b24a94a65d3c2ecccfe114a22bb90",
+   "bytes": 759735
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1130-OBFUSCATED.phhs",
+   "sha256": "32f309ffb10aba36049662cfd2efa8ab1fc32401268e613fbdb4bd4dc767f095",
+   "bytes": 708395
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1193-OBFUSCATED.phhs",
+   "sha256": "f953d1e9cfe5e69716c62ad059ad8378b6a2ed8aeca140b9643dffade0ac2015",
+   "bytes": 708958
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1255-OBFUSCATED.phhs",
+   "sha256": "dac25f22519fe842e6374009cf0fc50402574e6ca07cedfb9f43a0880d869f30",
+   "bytes": 568173
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1318-OBFUSCATED.phhs",
+   "sha256": "dc8dc1fb0bee7972b11597f7f33649c0bdf6610eef470cc905361840faed9222",
+   "bytes": 618630
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1381-OBFUSCATED.phhs",
+   "sha256": "c66c6d51aa9c8f13a1ae6e64450b31a1e8e3124864201cbb83b82ca06294ea7b",
+   "bytes": 681958
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1444-OBFUSCATED.phhs",
+   "sha256": "b8bd9ceed7ec7a8d7a09f659433d919fd99400bbc890e05a161a9fa1c2127df8",
+   "bytes": 718624
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1506-OBFUSCATED.phhs",
+   "sha256": "771c3e9f120ef1192c50fe162a80c46367bacdfcce06b97aad86a354ba178808",
+   "bytes": 664016
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1569-OBFUSCATED.phhs",
+   "sha256": "463f393245d57df25c5ff45e5978e8603b86edcacc497c61ea3f017e72f145b7",
+   "bytes": 622310
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1632-OBFUSCATED.phhs",
+   "sha256": "2d6776c0ca4e5d29a64227cb3ad34017ebdb1c68712e845aaca0cbaae3f62579",
+   "bytes": 652476
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1695-OBFUSCATED.phhs",
+   "sha256": "0471f6a48e21b966da27d8c33d0073d98ffee55ac331e28b15b0c8d994b7c3ef",
+   "bytes": 705556
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1757-OBFUSCATED.phhs",
+   "sha256": "7ddff229a5d78e41fea1c87b4f0e04f41df059f93e74ee088802c05ca8cc04e1",
+   "bytes": 597226
+  },
+  {
+   "path": "phh-handhq/IPN-2009-07-01_2009-07-23_200NLH_OBFU/2/ipn NLH handhq_1820-OBFUSCATED.phhs",
+   "sha256": "4b33f23df4219968024beb07cb42c94ed93d177fe38e763f05cfe4a6406c26d8",
+   "bytes": 247151
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_1-OBFUSCATED.phhs",
+   "sha256": "10ffa95460152fbae2508ead02b6c0d87931ea046266a62bbee0327c4f09dbf4",
+   "bytes": 777612
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_12-OBFUSCATED.phhs",
+   "sha256": "e30b7b2908bfeae0359f1c0b896f7a260a0ccc55ab5ea5a8cb9b75fb5330fc03",
+   "bytes": 799976
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_23-OBFUSCATED.phhs",
+   "sha256": "7e1049e7bc3bf62ce8bab81602f8d1b5ffca2b45a1c2dd88ac58a10a05817b92",
+   "bytes": 710531
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_35-OBFUSCATED.phhs",
+   "sha256": "59a5a3f8d3267ec8c0ec21b91d0f840747d7666a300882067b741c412841e728",
+   "bytes": 804587
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_46-OBFUSCATED.phhs",
+   "sha256": "2912cbabe604576c74c575b4bf9aef8042405b12eef9a62fcd291ac8e40865be",
+   "bytes": 774312
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_57-OBFUSCATED.phhs",
+   "sha256": "914f9dbf257721d13fc99a812ecb446bd5590719e654d25895928fc89e8640f3",
+   "bytes": 782817
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_68-OBFUSCATED.phhs",
+   "sha256": "2729dd570f306a875e74203b126902df7d3da4f887ca2da0fcd59c43e80357cf",
+   "bytes": 679286
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_79-OBFUSCATED.phhs",
+   "sha256": "11f907213994b0a312f61966dcc8aa27e13eda4b4dfb65da68d2d98442cb3430",
+   "bytes": 806052
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_90-OBFUSCATED.phhs",
+   "sha256": "565059d94ac66c20abcac905ffe7bc8beb6089268b4866b2252e16f5112485fd",
+   "bytes": 694863
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_102-OBFUSCATED.phhs",
+   "sha256": "7460b8f95eb4d9d0e237fd070d656406d8768bfd9e623442412f97ce2d2ac5d7",
+   "bytes": 763348
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_113-OBFUSCATED.phhs",
+   "sha256": "27d3ac93334f30d9bf2a35c2901a24a2ff093cb5e96d6a19b722db327d77f751",
+   "bytes": 757533
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_124-OBFUSCATED.phhs",
+   "sha256": "6e33271ca3965270e0d7cf756156fc93f06b799093e63e4b37bb2cd73f1a0ceb",
+   "bytes": 814331
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_135-OBFUSCATED.phhs",
+   "sha256": "41cf048f45c5a2f4e75e92a11f7b2ac25a89ce158f6db83cc6f3d35dd6d20323",
+   "bytes": 742948
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_146-OBFUSCATED.phhs",
+   "sha256": "47b0e9b02de266d243ee5826de991fb6332503cab7220ed145a51e3176a517ae",
+   "bytes": 777905
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_157-OBFUSCATED.phhs",
+   "sha256": "095384031c7dd9404c298e53851236de4fcdc4287c7492eb383e319cd9a8b66e",
+   "bytes": 764018
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_169-OBFUSCATED.phhs",
+   "sha256": "e1ffafe688e613b9c6f1ba1553e2edc6ac0fefef63a3aa75fd1e4bb3bc001dda",
+   "bytes": 708538
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_180-OBFUSCATED.phhs",
+   "sha256": "ab0bc94d7e0097e73a12fdd2e0472bdd9b9c97b34636478148f48d411abc5c5d",
+   "bytes": 791115
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_191-OBFUSCATED.phhs",
+   "sha256": "f59742e204ae61736c9d50d0485c87b6f6d9f23f7d41a9d82074d829762148ed",
+   "bytes": 780994
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_202-OBFUSCATED.phhs",
+   "sha256": "85570ef79cb7e5e95300814de39beac586ba66665ebaaaa026c066796097f0fc",
+   "bytes": 745576
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_213-OBFUSCATED.phhs",
+   "sha256": "8bacae19c953ba8f985629fec8aa79120d82e24f8a51591b65cdba232282a86b",
+   "bytes": 751278
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_224-OBFUSCATED.phhs",
+   "sha256": "482242f6a20b7838c1f2c56be8acdf42223b474046644a5a25dfce99f8f573ca",
+   "bytes": 768160
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_236-OBFUSCATED.phhs",
+   "sha256": "2ddadbfef0e7a99ac96db96097505f64a08798908e18a32dfa101bca4fce8e75",
+   "bytes": 715527
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_247-OBFUSCATED.phhs",
+   "sha256": "c5fa48090bdb1decb3bc8bd22683e0624ae1d72f7534bdc9b5aea31db29e28fc",
+   "bytes": 738309
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_258-OBFUSCATED.phhs",
+   "sha256": "304ca03d1549411e71793d8be83694e7ef9d28b78d3230e15f2404fd3bc10033",
+   "bytes": 818088
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_269-OBFUSCATED.phhs",
+   "sha256": "3a29ff99030fa506e01a0e260a4a72b8ba12813a44fc44a6084730fc05f27e7b",
+   "bytes": 784690
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_280-OBFUSCATED.phhs",
+   "sha256": "95145e7a423559ef0d4256e191044b6f1c5dfbbf2774ed78558d3228402f27fa",
+   "bytes": 702150
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_291-OBFUSCATED.phhs",
+   "sha256": "f9c92e3015abd9b00855dc1e7528f810fd1675c242edc901c727e33e951caf8f",
+   "bytes": 690109
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_303-OBFUSCATED.phhs",
+   "sha256": "4fe024bd1b2d43056ccccd85e15dcd08827387b6fef06521be65ef2f0ca0782d",
+   "bytes": 736951
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_314-OBFUSCATED.phhs",
+   "sha256": "b251225d87f87eb87860a39e58d49e380de48d902bc69ec909033d4e56f26368",
+   "bytes": 722948
+  },
+  {
+   "path": "phh-handhq/ABS-2009-07-01_2009-07-23_100NLH_OBFU/1/abs NLH handhq_325-OBFUSCATED.phhs",
+   "sha256": "b9ce04f78b7c626c737c161375f6446407be1d9a19c64b6dc2d441e81e789c44",
+   "bytes": 8994
+  }
+ ]
+}

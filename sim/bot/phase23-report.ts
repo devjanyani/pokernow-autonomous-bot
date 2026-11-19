@@ -14,8 +14,8 @@ const FAMILY: Record<string, string> = {
 };
 const fmt = (r: { bb100: number; ci95: number }) => `${r.bb100 >= 0 ? '+' : ''}${r.bb100.toFixed(1)} ± ${r.ci95.toFixed(1)}${Math.abs(r.bb100) > r.ci95 ? ' *' : ''}`;
 const pct = (a: number, b: number) => (b ? `${(100 * a / b).toFixed(0)}%` : '–');
-const engines = ['v1', 'v2', 'v3', 'ml'].filter((e) => lines.every((l) => l.results[e]));
-const PAIRS = ([['v3', 'v2'], ['v3', 'v1'], ['v2', 'v1'], ['ml', 'v2']] as [string, string][]).filter(([a, b]) => engines.includes(a) && engines.includes(b));
+const engines = ['v1', 'v2', 'v3', 'v3p', 'v3r', 'v3pr', 'ml'].filter((e) => lines.every((l) => l.results[e]));
+const PAIRS = ([['v3', 'v2'], ['v3', 'v1'], ['v2', 'v1'], ['ml', 'v2'], ['v3p', 'v3'], ['v3r', 'v3'], ['v3pr', 'v3'], ['v3pr', 'v2']] as [string, string][]).filter(([a, b]) => engines.includes(a) && engines.includes(b));
 const diff = (l: Line, a: string, b: string) => pairedDiff(l.results[a].perDeal, l.results[b].perDeal);
 const out: string[] = [];
 const tablePairs = PAIRS.filter(([a, b]) => !(a === 'v2' && b === 'v1'));

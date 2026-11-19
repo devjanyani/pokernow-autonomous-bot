@@ -72,13 +72,19 @@ const fmt = (a: Acc | undefined, digits = 2): string => {
   return `${mean >= 0 ? '+' : ''}${mean.toFixed(digits)} ± ${ci.toFixed(digits)}${sig} (n=${a.n})`;
 };
 
-export type EngName = 'v1' | 'v2' | 'v3';
+export type EngName = 'v1' | 'v2' | 'v3' | 'v3p' | 'v3r' | 'v3pr';
+// Phase 2.5 candidates (version 3 with the population calibration and / or the river-range tilt fitted to real hands).
+const agentFor = (e: EngName, seed: number) => new BotAgent({
+  seed, engine: e.startsWith('v3') ? 'v3' : (e as 'v1' | 'v2'), v3Sensitivity: false,
+  v3Population: e === 'v3p' || e === 'v3pr' ? JSON.parse(fs.readFileSync('src/bot/strategy/v3/population-calibration.json', 'utf8')) : undefined,
+  v3RiverRange: e === 'v3r' || e === 'v3pr' ? JSON.parse(fs.readFileSync('src/bot/strategy/v3/river-range-calibration.json', 'utf8')) : undefined,
+});
 export async function collect(table: string, hands: number, seed: number, o: { a?: EngName; b?: EngName; behave: EngName; samples: number; contSamples: number; flop: number; rivers: number | 'all'; reps: number; every: number }): Promise<{ rows: RefRow[]; heroNetBB: number; seconds: number }> {
   const field = REF_TABLES[table];
   if (!field) throw new Error(`unknown table ${table}. Known: ${Object.keys(REF_TABLES).join(', ')}`);
   const n = field.length + 1;
   const A: EngName = o.a ?? 'v2', B: EngName = o.b ?? 'v1';
-  const v2 = new BotAgent({ seed, engine: A, v3Sensitivity: false }), v1 = new BotAgent({ seed: seed + 17, engine: B, v3Sensitivity: false });
+  const v2 = agentFor(A, seed), v1 = agentFor(B, seed + 17);
   const cont = new BotAgent({ seed: seed + 31, engine: 'v2' });
   const others = field.map((sp, i) => makePolicy(sp, o.samples, seed + i + 1));
   const rows: RefRow[] = [];

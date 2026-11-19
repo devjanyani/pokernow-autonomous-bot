@@ -38,7 +38,7 @@ import type { VillainModel } from '../../src/bot/strategy/villains';
 import { HandState, legalActions, potTotal, seatOf } from '../../src/bot/table/engine';
 import type { RangeHand } from '../../src/core/solver/postflop-cfr';
 import { mlAdvice } from './ml-adapter';
-import { independentCheck, nodeAnalysis, RiverSpec, solveRiver } from './river-reference';
+import { independentCheck, nodeAnalysis, RiverSpec, solveRiver, villainActionProbs } from './river-reference';
 import { buildSpot } from './scenarios';
 
 const argN = (f: string, d: number) => { const i = process.argv.indexOf(`--${f}`); return i >= 0 ? Number(process.argv[i + 1]) : d; };
@@ -107,18 +107,30 @@ function villainModel(h: HandState, seat: number, range: Range): VillainModel {
   return { seat, playerId: s.playerId, name: s.name, range, line: 'specified', tend: NEUTRAL, stack: s.stack, streetCommit: s.streetCommit, totalCommit: s.totalCommit, allIn: s.allIn, actsBehind: true, summary: '', rangeBasis: 'heuristic', rangeSource: 'specified', retained: 1, poorFit: false };
 }
 
-interface Advice { kind: string; chips: number }
-function advise(engine: 'v1' | 'v2' | 'v3' | 'ml', h: HandState, heroSeat: number, hole: [number, number], villain: VillainModel, heroPerceived: Range, samples: number, seed: number): Advice | null {
+interface Advice { kind: string; chips: number; /** v3: the model's fold probability for the whole range after Hero's action (raises only). */ predFold?: number }
+type Eng = 'v1' | 'v2' | 'v3' | 'v3p' | 'ml';
+// Phase 2.5: v3p = version 3 with the population calibration fitted to real hands (sim/bot/phase25/calibrate.ts).
+const POP = () => JSON.parse(fs.readFileSync('src/bot/strategy/v3/population-calibration.json', 'utf8'));
+function advise(engine: Eng, h: HandState, heroSeat: number, hole: [number, number], villain: VillainModel, heroPerceived: Range, samples: number, seed: number): Advice | null {
   const la = legalActions(h, heroSeat)!;
   const hero = seatOf(h, heroSeat);
   const f = computeFeatures(h.board);
   let pick: { action: string; to?: number } | null = null;
   if (engine === 'ml') { const a = mlAdvice(h, heroSeat, hole, la); pick = a ? { action: a.action, to: a.to } : null; }
-  else if (engine === 'v3') {
-    const s = new PostflopSearchV3(h, heroSeat, hole, villain, defaultKnobs(NEUTRAL), f, seed, heroPerceived);
+  else if (engine === 'v3' || engine === 'v3p') {
+    const k = defaultKnobs(NEUTRAL);
+    if (engine === 'v3p') k.population = POP();
+    const s = new PostflopSearchV3(h, heroSeat, hole, villain, k, f, seed, heroPerceived);
     s.run(samples);
     const r = s.result(2.5, false);
-    pick = r.candidates[r.best];
+    const c = r.candidates[r.best];
+    let predFold: number | undefined;
+    if (c.action === 'raise' || c.action === 'bet') {
+      const any = villain.range.findIndex((w) => w > 0);
+      const resp = any >= 0 ? s.responseAt(r.best, any) : null;
+      if (resp) predFold = resp.forRange[0];
+    }
+    return { kind: c.action, chips: c.action === 'bet' || c.action === 'raise' ? (c.to as number) - hero.streetCommit : 0, predFold };
   } else if (engine === 'v2') {
     const s = new PostflopSolver(h, heroSeat, hole, [villain], f, seed, heroPerceived);
     s.run(samples);
@@ -149,7 +161,8 @@ const ci = (a: Acc | undefined, d = 2, pct = false) => { if (!a || !a.n) return 
 
 async function main(): Promise<void> {
   const per = argN('hands-per', 16), cap = argN('cap', 150), samples = argN('samples', 800);
-  const engines = ['v1', 'v2', 'v3', 'ml'] as const;
+  const engines = argS('engines', 'v1,v2,v3,ml').split(',') as Eng[];
+  const diag: string[] = ['## Version 3 raises against a lead: predicted fold against the equilibrium fold', '', '| Spot | Engine | Hero hand percentile | Action | Predicted fold of the range | Equilibrium fold at that node | Loss (bb) |', '|---|---|---|---|---|---|---|'];
   const L: string[] = ['## River decisions against the solver, independently specified ranges', '',
     `Engines at ${samples} samples, version 3 with its model-uncertainty mixture switched on (its default). Ranges thinned to at most ${cap} hands per player. ${per} Hero hands per spot, spread over Hero's range by made-hand strength. Loss = value of the best action minus value of the adviser's action, both playing on as well as possible against the solution's other player; big blinds per decision.`, ''];
   const total = new Map<string, Acc>();
@@ -216,6 +229,12 @@ async function main(): Promise<void> {
         const ai = matchAction(analysis.kinds, analysis.chips, adv);
         if (ai < 0) continue;
         const loss = (best - vals[ai]) / 20;
+        if (adv.predFold !== undefined && t.kind === 'root' && toCall > 0 && analysis.kinds[ai] !== 'fold' && analysis.kinds[ai] !== 'call') {
+          const label = sol.solver.root.actions[ai].label;
+          const eq = villainActionProbs(sol, spec, [label], p.i);
+          const fi = eq.kinds.indexOf('fold');
+          diag.push(`| ${t.name} | ${e} | ${p.hs.toFixed(2)} | ${analysis.kinds[ai]} ${(analysis.chips[ai] / 20).toFixed(0)} bb | ${(100 * adv.predFold).toFixed(0)}% | ${fi >= 0 ? (100 * eq.probs[fi]).toFixed(0) : '–'}% | ${loss.toFixed(2)} |`);
+        }
         add(m, `${e}|loss`, loss); add(total, `${e}|loss`, loss);
         add(m, `${e}|support`, analysis.probs[ai][p.i] >= 0.05 ? 1 : 0); add(total, `${e}|support`, analysis.probs[ai][p.i] >= 0.05 ? 1 : 0);
         const c = klass(analysis.kinds[ai], analysis.chips[ai], potTotal(b.h) - (t.kind === 'check-raise' ? betChips : toCall));
@@ -235,6 +254,7 @@ async function main(): Promise<void> {
     console.error(`${t.name}: done (${n} hands, exploitability ${(100 * sol.exploitPotShare).toFixed(2)}%)`);
   }
   L.push('### All spots together', '', '| Adviser | Loss (bb per decision) | Action in the solution\'s support |', '|---|---|---|', ...engines.map((e) => `| ${e} | ${ci(total.get(`${e}|loss`))} (n=${total.get(`${e}|loss`)?.n ?? 0}) | ${ci(total.get(`${e}|support`), 0, true)} |`), '');
+  L.push('', ...diag, '');
   console.log(L.join('\n'));
   const out = argS('out', '');
   if (out) fs.writeFileSync(out, L.join('\n') + '\n');

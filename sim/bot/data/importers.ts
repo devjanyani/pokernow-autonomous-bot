@@ -87,7 +87,14 @@ function tomlValue(text: string): unknown {
   const t = text.trim();
   if (/^'.*'$/.test(t) || /^".*"$/.test(t)) return t.slice(1, -1);
   if (t === 'true' || t === 'false') return t === 'true';
-  if (t.startsWith('[')) return JSON.parse(t.replace(/'/g, '"').replace(/,\s*\]/g, ']'));
+  // TOML local times and dates (HandHQ files write `time = 00:00:03`): kept as text.
+  if (/^\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(t) || /^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  // `inf` (HandHQ iPoker files: stacks not recorded) is read as Infinity; the caller decides what to do with it.
+  if (t.startsWith('[')) {
+    // Only a bare list element `inf` is replaced, never text inside a quoted string.
+    const json = t.replace(/'/g, '"').replace(/,\s*\]/g, ']').replace(/(^\[|,)(\s*)inf(?=\s*[,\]])/g, '$1$21e999');
+    return JSON.parse(json);
+  }
   const n = Number(t);
   if (Number.isFinite(n)) return n;
   throw new Error(`cannot read value ${t.slice(0, 40)}`);
@@ -112,6 +119,10 @@ export function parsePhh(text: string, source: string, handId: string): { hand: 
   const stacks = f.starting_stacks as number[], blinds = f.blinds_or_straddles as number[], acts = f.actions as string[];
   if (!Array.isArray(stacks) || !Array.isArray(blinds) || !Array.isArray(acts) || stacks.length !== blinds.length) return fail('starting_stacks, blinds_or_straddles and actions are required and must agree in length');
   const n = stacks.length;
+  // Unknown stacks (written `inf`): replaced by 1,000 big blinds each and flagged, so the betting replays; any
+  // statistic that needs stacks (stack-to-pot ratio, all-in) must skip hands with meta.stacksUnknown.
+  const stacksUnknown = stacks.some((x) => !Number.isFinite(x));
+  if (stacksUnknown) for (let i = 0; i < n; i++) if (!Number.isFinite(stacks[i])) stacks[i] = 1000 * Math.max(...blinds);
   const posted = blinds.map((b, i) => ({ b, i })).filter((x) => x.b > 0);
   if (posted.length !== 2) return fail(posted.length > 2 ? 'straddles are not supported' : 'exactly a small and a big blind are required');
   const [lo, hi] = posted[0].b <= posted[1].b ? [posted[0], posted[1]] : [posted[1], posted[0]];
@@ -142,8 +153,28 @@ export function parsePhh(text: string, source: string, handId: string): { hand: 
     else return fail(`action "${a}" is not understood`);
   }
   const meta: Record<string, string | number> = {};
-  for (const k of ['venue', 'day', 'month', 'year', 'hand', 'currency']) if (typeof f[k] === 'string' || typeof f[k] === 'number') meta[k] = f[k] as string | number;
+  for (const k of ['venue', 'day', 'month', 'year', 'hand', 'currency', 'currency_symbol', 'time', 'table', 'seat_count']) if (typeof f[k] === 'string' || typeof f[k] === 'number') meta[k] = f[k] as string | number;
+  if (stacksUnknown) meta.stacksUnknown = 1;
   return { hand: { source, handId, seats: stacks.map((s, i) => ({ seat: i, name: Array.isArray(f.players) ? String((f.players as unknown[])[i]) : null, stack: s })), buttonSeat, smallBlind: lo.b, bigBlind: hi.b, ante: antes[0] ?? 0, holes, board, actions, meta }, issues: [] };
+}
+
+/**
+ * A `.phhs` file: many PHH hands, each introduced by a `[n]` header line (HandHQ files in the PHH dataset).
+ * Each section is parsed by parsePhh with the id `<fileTag>#<n>`; a section that fails is reported and skipped.
+ */
+export function parsePhhs(text: string, source: string, fileTag: string): { hands: HandHistory[]; issues: Issue[]; sections: number } {
+  const hands: HandHistory[] = [];
+  const issues: Issue[] = [];
+  const parts = text.split(/^\[(\d+)\]\s*$/m);
+  // parts = [preamble, n1, body1, n2, body2, ...]
+  let sections = 0;
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    sections++;
+    const r = parsePhh(parts[i + 1], source, `${fileTag}#${parts[i]}`);
+    if (r.hand) hands.push(r.hand);
+    issues.push(...r.issues);
+  }
+  return { hands, issues, sections };
 }
 
 // ---- own PokerNow logs ------------------------------------------------------------------------------

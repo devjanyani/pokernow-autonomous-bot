@@ -1,10 +1,22 @@
 # Project progress
 
-Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.1.
+Last updated: 2026-11-18. Branch `autonomous-bot`. Version 0.8.2.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-18, version 0.8.1)
+## Checkpoint (2026-11-18, version 0.8.2)
+
+- Branch `autonomous-bot`, version 0.8.2, pushed to remote `private`. `dist/` is built at 0.8.2.
+- Done in this version: Phase 2.5. The first real hand histories were used: 89,170 cash hands from the MIT-licensed
+  PHH dataset (HandHQ, 2009), as a bounded, pinned, hashed sample under the git-ignored `data/` folder, with a
+  provenance record. Fitted opponent models beat the hand-set one on held-out data. River ranges were found too
+  strong and partly corrected. The river fold failure was diagnosed. Two experimental version 3 options were added.
+- **No production behaviour changed.** Version 2 is the default; version 3 and its new options are offline only.
+- **Open:** the final held-out benchmark (seed 13300) was stopped by a low-memory condition and has not been run:
+  `npm run bot:phase25 -- --bench --seed 13300 --jobs 1`.
+- Accounts: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md), [reports/PHASE_2_5_CALIBRATION.md](reports/PHASE_2_5_CALIBRATION.md), [reports/PHASE_2_5_STRATEGY_BENCHMARK.md](reports/PHASE_2_5_STRATEGY_BENCHMARK.md).
+
+## Previous checkpoint (2026-11-18, version 0.8.1)
 
 - Branch `autonomous-bot`, version 0.8.1, pushed to remote `private`. `dist/` is built at 0.8.1.
 - Done in this version: Phase 2.4. The cause of version 3's over-raising was found (learned knobs that counted
@@ -42,7 +54,9 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 
 ## Where things stand
 
-**0.8.1 (latest): Phase 2.4.** Version 3's over-raising came from opponent knobs that read Hero's own range selection as a trait of the player; they are now calibrated against the model's own predictions. Version 3 is now level with version 2 on fresh seeds but not better, so it stays offline. Details: [PHASE_2_4_MODEL_CALIBRATION.md](docs/bot/PHASE_2_4_MODEL_CALIBRATION.md).
+**0.8.2 (latest): Phase 2.5, opponent learning from real hands.** 89,170 real 2009 cash hands show that the hand-set opponent model over-predicts folding, above all when raised, and that river betting ranges are estimated too strong. Fitted models predict significantly better; inside version 3 they do not yet play measurably better against the simulated opponents. Details: [PHASE_2_5_OPPONENT_LEARNING.md](docs/bot/PHASE_2_5_OPPONENT_LEARNING.md).
+
+**0.8.1: Phase 2.4.** Version 3's over-raising came from opponent knobs that read Hero's own range selection as a trait of the player; they are now calibrated against the model's own predictions. Version 3 is now level with version 2 on fresh seeds but not better, so it stays offline. Details: [PHASE_2_4_MODEL_CALIBRATION.md](docs/bot/PHASE_2_4_MODEL_CALIBRATION.md).
 
 **0.8.0: Phase 2.3, cash-game strategy.** An experimental engine (version 3) searches betting sequences: check-raises, re-raises, calling now and raising later. It plays against an opponent model that depends on the betting so far and allows for its own uncertainty. It works as designed, but it was not better than version 2 in a held-out benchmark, so it stays offline. The default is unchanged. Details: [PHASE_2_3_ADVANCED_STRATEGY.md](docs/bot/PHASE_2_3_ADVANCED_STRATEGY.md).
 

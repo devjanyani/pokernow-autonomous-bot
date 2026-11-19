@@ -2,6 +2,15 @@
 
 All notable changes. Versions match the on-table overlay badge and GitHub releases.
 
+## v0.8.2 (2026-11-18)
+Phase 2.5: opponent learning from real cash-game hands. No production behaviour changed (version 2 default; version 3 offline). Accounts: `docs/bot/PHASE_2_5_OPPONENT_LEARNING.md`, `reports/PHASE_2_5_CALIBRATION.md`, `reports/PHASE_2_5_STRATEGY_BENCHMARK.md`.
+- Data: 89,170 valid cash hands (237,380 postflop decisions) from a pinned, bounded sample of the MIT-licensed PHH dataset (HandHQ, 2009 online 100NL-200NL), fetched reproducibly with hashes into the git-ignored data folder; provenance record validated. Heads-up tables excluded (blind order inconsistent in the conversion); unknown iPoker stacks flagged.
+- Measured: on held-out days and held-out players every fitted model predicts real players' actions better than version 3's hand-set model (logistic -0.030, frequency table -0.028, residual-calibrated version 3 -0.019 nats per decision, all significant). Real players fold less than modelled, above all when raised.
+- Measured: version 2's river betting ranges are too strong (8% weak hands predicted, 15.5% revealed); a fitted re-weighting improves the likelihood of revealed hands significantly but closes only part of the gap.
+- Found: version 3's failure to fold against a condensed river bet is a bet-size response error at break-even (it predicted 79% folds to its all-in where the equilibrium folds 72-75%), not a range, equity or payoff error.
+- New (experimental, offline): agent options `v3Population` and `v3RiverRange` with the fitted tables; explanations say which parts are empirical. Against the simulated opponents (seed 13100) no candidate is better or worse than version 3. The final held-out set was stopped by a low-memory condition and is not run.
+- New tools: `npm run bot:phase25` (fetch, extract, predict, calibrate, river estimator, optional benchmark with bounded parallelism); importer for multi-hand PHH files, TOML times and unknown stacks.
+
 ## v0.8.1 (2026-11-18)
 Phase 2.4: version 3's over-raising. Default engine unchanged (version 2); version 3 still offline. Accounts: `docs/bot/PHASE_2_4_MODEL_CALIBRATION.md`, `reports/PHASE_2_4_BENCHMARK.md`.
 - Found: version 3's learned knobs compared a player's raw fold rate after Hero's raises (and raise rate after Hero's bets) with a fixed population rate. That rate depends on Hero's own ranges, so the knobs counted it twice and drifted toward "this player folds" as hands accumulated (against version 2's model: "+0.13 extra folding to a check-raise", raising 76% facing bets, −114 bb/100).

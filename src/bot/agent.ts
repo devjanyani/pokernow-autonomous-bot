@@ -17,6 +17,7 @@ import { decidePreflop } from './strategy/preflop';
 import { PostflopSolver, PostflopResult } from './strategy/postflop';
 import { PostflopSolverV1 } from './strategy/postflop-v1';
 import { addCalib, Calibration, CalibKey, knobsFor } from './strategy/v3/model';
+import { PopulationCalibration, RiverRangeCalibration, tiltRiverRange } from './strategy/v3/empirical';
 import { PostflopSearchV3, V3Detail } from './strategy/v3/search';
 import { analyseSpot, describeSpot, SpotInfo } from './strategy/spot';
 import { Candidate, Decision } from './strategy/types';
@@ -49,6 +50,12 @@ export interface AgentOptions {
   postflopEngine?: 'v1' | 'v2' | 'v3';
   /** Version 3: also evaluate the chosen action under two other opponent models (three times the evaluation work). Default true. */
   v3Sensitivity?: boolean;
+  /**
+   * Phase 2.5, experimental and offline only (the extension never sets them): population corrections of version 3's
+   * opponent responses and a tilt of the river bettor's range, both fitted to real cash-game hands (strategy/v3/empirical.ts).
+   */
+  v3Population?: PopulationCalibration;
+  v3RiverRange?: RiverRangeCalibration;
   /** Diagnostics only (offline tools): called with every version 3 search and the decision made from it. */
   onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
 }
@@ -90,6 +97,10 @@ export class BotAgent {
   private readonly postflopEngine: 'v1' | 'v2' | 'v3';
   private readonly v3Sensitivity: boolean;
   private readonly onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
+  private readonly v3Population?: PopulationCalibration;
+  private readonly v3RiverRange?: RiverRangeCalibration;
+  /** What the empirical corrections changed in the last version 3 search (for the explanation). */
+  private v3EmpiricalNote: string[] = [];
 
   constructor(opts: AgentOptions = {}) {
     this.exploitWeight = opts.exploitWeight ?? 1;
@@ -99,6 +110,8 @@ export class BotAgent {
     this.postflopEngine = opts.postflopEngine ?? this.engine;
     this.v3Sensitivity = opts.v3Sensitivity ?? true;
     this.onV3Search = opts.onV3Search;
+    this.v3Population = opts.v3Population;
+    this.v3RiverRange = opts.v3RiverRange;
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
@@ -209,10 +222,23 @@ export class BotAgent {
   private newSearchV3(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>): PostflopSearchV3 | string {
     if (this.postflopEngine !== 'v3') return 'not selected';
     if (prep.villains.length !== 1) return `${prep.villains.length} opponents in the pot: version 3 searches heads-up pots only`;
-    const v = prep.villains[0];
+    let v = prep.villains[0];
     const seed = prep.rng.int(1 << 30);
+    const knobs = knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight, this.v3Calibration.get(v.playerId));
+    this.v3EmpiricalNote = [];
+    if (this.v3Population) {
+      knobs.population = this.v3Population;
+      this.v3EmpiricalNote.push(`empirical (${this.v3Population.source}): the opponent's fold, call, raise and bet probabilities include population corrections fitted to real cash-game hands against this model's own predictions; the response functions themselves are hand-set`);
+    }
+    if (this.v3RiverRange && h.street === 'river' && prep.la.callAmount > 0 && h.aggressor.river === v.seat) {
+      const betTurn = h.events.some((e) => e.street === 'turn' && e.seat === v.seat && (e.kind === 'bet' || e.kind === 'raise'));
+      const frac = prep.la.callAmount / Math.max(1e-9, potTotal(h) - prep.la.callAmount);
+      const t = tiltRiverRange(this.v3RiverRange, v.range, this.cache.get(h.board).hs, frac, betTurn);
+      v = { ...v, range: t.range };
+      this.v3EmpiricalNote.push(`empirical (${this.v3RiverRange.source}): the bettor's river range is version 2's estimate re-weighted by hand strength as fitted to revealed holdings of called river bets (cell ${t.cell}); value / bluff composition is a model hypothesis`);
+    }
     try {
-      return new PostflopSearchV3(h, heroSeat, heroCards, v, knobsFor(this.profiles.get(v.playerId), v.tend, this.exploitWeight, this.v3Calibration.get(v.playerId)), this.cache.get(h.board), seed, prep.heroPerceived);
+      return new PostflopSearchV3(h, heroSeat, heroCards, v, knobs, this.cache.get(h.board), seed, prep.heroPerceived);
     } catch (e) { return `search not built: ${(e as Error).message}`; }
   }
 
@@ -305,6 +331,7 @@ export class BotAgent {
       }
     }
     basis.push(`model uncertainty: decided against a mixture of opponents Hero cannot tell apart: ${d.mixture.map((m) => `${pct(m.weight)} ${m.name}`).join(', ')} (the share of the two deviations shrinks as this opponent's own responses are observed)`);
+    basis.push(...this.v3EmpiricalNote);
     for (const s of d.sensitivity) basis.push(`opponent-model sensitivity: if the opponent ${s.scenario === 'as modelled' ? 'plays exactly as modelled' : s.scenario}, the chosen action is worth ${chips(s.evOfChosen)} chips and the best would be "${s.best}" (${chips(s.evBest)})`);
     const ev = search.cfg;
     void ev;

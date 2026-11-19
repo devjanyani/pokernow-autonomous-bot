@@ -59,7 +59,7 @@ function cardIssues(where: string, cards: string[]): Issue[] {
 export interface Replay { state: HandState | null; issues: Issue[] }
 
 /** Replay a hand through the rules engine. The board cards are dealt when the betting of a street closes. */
-export function replayHand(h: HandHistory): Replay {
+export function replayHand(h: HandHistory, onDecision?: (state: HandState, index: number, action: HandHistory['actions'][number]) => void): Replay {
   const where = `hand ${h.handId}`;
   const issues: Issue[] = [];
   if (!Array.isArray(h.seats) || h.seats.length < 2 || h.seats.length > 10) return { state: null, issues: [err(where, 'needs 2 to 10 seats')] };
@@ -92,6 +92,7 @@ export function replayHand(h: HandHistory): Replay {
     const input = { seat: a.seat, kind: a.kind, to: a.kind === 'bet' || a.kind === 'raise' ? a.to : undefined };
     const bad = validateAction(state, input);
     if (bad) { issues.push(err(where, `action ${i + 1} (${a.kind}${a.to !== undefined ? ` to ${a.to}` : ''} by seat ${a.seat}) is not legal: ${bad.code}`)); return { state, issues }; }
+    onDecision?.(state, i, a);
     applyAction(state, input);
   }
   deal();

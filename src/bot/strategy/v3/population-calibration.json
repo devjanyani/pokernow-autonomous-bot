@@ -1,0 +1,283 @@
+{
+ "source": "phh-dataset@e47fbd5 (release v3, 2025-09-18)",
+ "sample": "HandHQ, 89170 hands, fetch-handhq.ts",
+ "fittedOn": "days 1-18 (train + validation)",
+ "lambda": 2,
+ "cells": {
+  "flop|bet|large": {
+   "shift": 0,
+   "mult": 1.4,
+   "n": 6339
+  },
+  "flop|bet|medium": {
+   "shift": 0,
+   "mult": 2,
+   "n": 13593
+  },
+  "flop|bet|overbet": {
+   "shift": 0,
+   "mult": 0.7,
+   "n": 540
+  },
+  "flop|bet|small": {
+   "shift": 0,
+   "mult": 4,
+   "n": 1767
+  },
+  "flop|cold|large": {
+   "shift": 0,
+   "mult": 1.4,
+   "n": 22
+  },
+  "flop|cold|medium": {
+   "shift": -0.05,
+   "mult": 1.4,
+   "n": 42
+  },
+  "flop|cold|overbet": {
+   "shift": 0,
+   "mult": 1,
+   "n": 6
+  },
+  "flop|cold|small": {
+   "shift": -0.05,
+   "mult": 1,
+   "n": 26
+  },
+  "flop|open|aggressor": {
+   "shift": 0,
+   "mult": 1.2,
+   "n": 16627
+  },
+  "flop|open|into-aggressor": {
+   "shift": 0,
+   "mult": 1.2,
+   "n": 10517
+  },
+  "flop|open|neutral": {
+   "shift": 0,
+   "mult": 0.8,
+   "n": 14779
+  },
+  "flop|raise|large": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 387
+  },
+  "flop|raise|medium": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 1041
+  },
+  "flop|raise|overbet": {
+   "shift": -0.1,
+   "mult": 1,
+   "n": 125
+  },
+  "flop|raise|small": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 1015
+  },
+  "flop|xr|large": {
+   "shift": -0.05,
+   "mult": 2.8,
+   "n": 191
+  },
+  "flop|xr|medium": {
+   "shift": -0.05,
+   "mult": 4,
+   "n": 594
+  },
+  "flop|xr|overbet": {
+   "shift": -0.05,
+   "mult": 0.7,
+   "n": 78
+  },
+  "flop|xr|small": {
+   "shift": -0.05,
+   "mult": 4,
+   "n": 497
+  },
+  "river|bet|large": {
+   "shift": -0.05,
+   "mult": 1,
+   "n": 1818
+  },
+  "river|bet|medium": {
+   "shift": -0.05,
+   "mult": 2,
+   "n": 3767
+  },
+  "river|bet|overbet": {
+   "shift": -0.05,
+   "mult": 0.7,
+   "n": 282
+  },
+  "river|bet|small": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 2064
+  },
+  "river|cold|large": {
+   "shift": 0,
+   "mult": 1,
+   "n": 1
+  },
+  "river|cold|medium": {
+   "shift": 0,
+   "mult": 1,
+   "n": 1
+  },
+  "river|cold|small": {
+   "shift": 0,
+   "mult": 1,
+   "n": 2
+  },
+  "river|open|aggressor": {
+   "shift": 0,
+   "mult": 1,
+   "n": 5326
+  },
+  "river|open|into-aggressor": {
+   "shift": 0,
+   "mult": 2.1,
+   "n": 2540
+  },
+  "river|open|neutral": {
+   "shift": 0,
+   "mult": 1,
+   "n": 10788
+  },
+  "river|raise|large": {
+   "shift": -0.1,
+   "mult": 1,
+   "n": 88
+  },
+  "river|raise|medium": {
+   "shift": -0.1,
+   "mult": 2,
+   "n": 201
+  },
+  "river|raise|overbet": {
+   "shift": -0.05,
+   "mult": 1,
+   "n": 19
+  },
+  "river|raise|small": {
+   "shift": -0.15,
+   "mult": 4,
+   "n": 335
+  },
+  "river|xr|large": {
+   "shift": -0.05,
+   "mult": 1,
+   "n": 20
+  },
+  "river|xr|medium": {
+   "shift": -0.05,
+   "mult": 1.4,
+   "n": 37
+  },
+  "river|xr|overbet": {
+   "shift": 0,
+   "mult": 1,
+   "n": 7
+  },
+  "river|xr|small": {
+   "shift": -0.05,
+   "mult": 2.8,
+   "n": 68
+  },
+  "turn|bet|large": {
+   "shift": 0,
+   "mult": 1,
+   "n": 2768
+  },
+  "turn|bet|medium": {
+   "shift": -0.05,
+   "mult": 2,
+   "n": 6891
+  },
+  "turn|bet|overbet": {
+   "shift": 0,
+   "mult": 0.7,
+   "n": 222
+  },
+  "turn|bet|small": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 2353
+  },
+  "turn|cold|large": {
+   "shift": 0.05,
+   "mult": 1,
+   "n": 8
+  },
+  "turn|cold|medium": {
+   "shift": 0.05,
+   "mult": 1,
+   "n": 11
+  },
+  "turn|cold|small": {
+   "shift": -0.05,
+   "mult": 1.4,
+   "n": 6
+  },
+  "turn|open|aggressor": {
+   "shift": 0,
+   "mult": 1,
+   "n": 9702
+  },
+  "turn|open|into-aggressor": {
+   "shift": 0,
+   "mult": 1,
+   "n": 5238
+  },
+  "turn|open|neutral": {
+   "shift": 0,
+   "mult": 0.8,
+   "n": 14787
+  },
+  "turn|raise|large": {
+   "shift": -0.05,
+   "mult": 1.4,
+   "n": 135
+  },
+  "turn|raise|medium": {
+   "shift": -0.05,
+   "mult": 2.8,
+   "n": 373
+  },
+  "turn|raise|overbet": {
+   "shift": -0.05,
+   "mult": 0.7,
+   "n": 41
+  },
+  "turn|raise|small": {
+   "shift": -0.1,
+   "mult": 4,
+   "n": 570
+  },
+  "turn|xr|large": {
+   "shift": -0.05,
+   "mult": 1.4,
+   "n": 55
+  },
+  "turn|xr|medium": {
+   "shift": -0.05,
+   "mult": 2.8,
+   "n": 177
+  },
+  "turn|xr|overbet": {
+   "shift": -0.05,
+   "mult": 1,
+   "n": 19
+  },
+  "turn|xr|small": {
+   "shift": -0.05,
+   "mult": 4,
+   "n": 283
+  }
+ }
+}

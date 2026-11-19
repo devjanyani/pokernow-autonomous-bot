@@ -41,13 +41,24 @@ export const BENCH_TABLES: Record<string, string[]> = {
   'six-aggro': ['loose-aggressive', 'raiser', 'maniac', 'adaptive-punisher', 'trapper'],
 };
 
-type Eng = 'v1' | 'v2' | 'v3' | 'ml';
+type Eng = 'v1' | 'v2' | 'v3' | 'ml' | 'v3p' | 'v3r' | 'v3pr';
 interface Stats { free: number; bet: number; facing: number; fold: number; raiseFacing: number; xrChance: number; xr: number; ms: number[] }
 const newStats = (): Stats => ({ free: 0, bet: 0, facing: 0, fold: 0, raiseFacing: 0, xrChance: 0, xr: 0, ms: [] });
 
+// Phase 2.5 candidates: version 3 with the population calibration (p), the river-range tilt (r), or both, fitted to
+// real hands (sim/bot/phase25). Loaded from the JSON tables next to the engine; offline only.
+const loadJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const POP = () => loadJson('src/bot/strategy/v3/population-calibration.json');
+const RIV = () => loadJson('src/bot/strategy/v3/river-range-calibration.json');
+
 function measured(eng: Eng, seed: number, samples: number, stats: Stats): Policy {
+  const v3x = eng === 'v3' || eng === 'v3p' || eng === 'v3r' || eng === 'v3pr';
   const inner = eng === 'v1' ? botPolicy({ samples, seed, engine: 'v1', name: 'v1' })
-    : botPolicy({ samples, seed, engine: eng === 'v3' ? 'v3' : 'v2', name: eng, v3Sensitivity: false });
+    : botPolicy({
+      samples, seed, engine: v3x ? 'v3' : 'v2', name: eng, v3Sensitivity: false,
+      v3Population: eng === 'v3p' || eng === 'v3pr' ? POP() : undefined,
+      v3RiverRange: eng === 'v3r' || eng === 'v3pr' ? RIV() : undefined,
+    });
   return {
     name: eng,
     observe: inner.observe,

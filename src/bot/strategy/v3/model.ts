@@ -25,6 +25,7 @@
 // and on how many observations.
 // ============================================================
 
+import { facingCorrection, openCorrection, PopulationCalibration } from './empirical';
 import { PlayerProfile, posterior, PRIORS, StatKey } from '../../opponents/profile';
 import { BetRole, Tendencies } from '../../ranges/postflop-model';
 import { betProb2, RANGE_MODEL, responseProbs2 } from '../../ranges/range-model';
@@ -80,6 +81,8 @@ export interface Knobs {
   evidence: string[];
   /** The player's observed responses to bets after the flop (opportunities), for the model-uncertainty weight. */
   observed: number;
+  /** Phase 2.5, experimental: population corrections fitted to real hands (empirical.ts); absent = none. */
+  population?: PopulationCalibration;
 }
 
 export const defaultKnobs = (tend: Tendencies): Knobs => ({
@@ -218,10 +221,14 @@ export function respond3(s: number, c: Ctx3, k: Knobs): Resp {
   if (c.checkRaised) shift += k.checkRaiseShift;
   else if (c.ownRaised) shift += k.raisedShift;
   if (c.level >= 3) shift += MODEL3.reraiseShift;
+  // Phase 2.5 (experimental, off unless given): population corrections fitted to real hands against this model's
+  // own range-conditional predictions (empirical.ts).
+  let popMult = 1;
+  if (k.population) { const pc = facingCorrection(k.population, c); shift += pc.shift; popMult = pc.mult; }
   const tend = { ...k.tend, stickiness: k.tend.stickiness - shift / RANGE_MODEL.stickinessShift };
   const r = responseProbs2(s, { street: c.street, betFrac: c.betFrac, opponents: 1, isRaise: c.level >= 2, tend });
   if (!c.canRaise) return { fold: r.fold, call: r.call + r.raise, raise: 0 };
-  const mult = k.raiseMult * (c.level >= 3 ? MODEL3.thirdRaiseMult : c.level >= 2 ? MODEL3.reraiseMult : 1);
+  const mult = k.raiseMult * popMult * (c.level >= 3 ? MODEL3.thirdRaiseMult : c.level >= 2 ? MODEL3.reraiseMult : 1);
   const raise = clamp(r.raise * mult, 0, r.raise + r.call);
   return { fold: r.fold, call: r.call + r.raise - raise, raise };
 }
@@ -234,6 +241,7 @@ export function bet3(s: number, c: Pick<Ctx3, 'street' | 'role'> & { lateStreet:
   if (c.role === 'aggressor' && c.lateStreet) p *= k.barrelMult;
   if (c.street === 'river') p *= k.riverBetMult;
   p = clamp(p, 0.01, 0.97);
+  if (k.population) p = clamp(p * openCorrection(k.population, c.street, c.role), 0.01, 0.97);
   // Size: strong hands and the weakest (bluffs) use the larger size somewhat more often; middling hands bet small.
   const tilt = s > 0.85 ? 0.15 : s < 0.3 ? 0.1 : s < 0.75 ? -0.1 : 0;
   const pl = clamp(k.largeShare + tilt, 0.05, 0.95);

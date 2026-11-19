@@ -226,3 +226,33 @@ export function nodeAnalysis(sol: RiverSolution, spec: RiverSpec, path: string[]
   });
   return { labels: node.actions.map((x) => x.label), kinds: node.actions.map((x) => x.kind), chips: node.actions.map((x) => x.chips), values, probs, villainReach: rv, heroReach: rh };
 }
+
+/**
+ * Phase 2.5: the villain's action probabilities under the solution at the node reached by `path` (which must end at
+ * a villain decision), averaged over the villain's range at that node, given Hero holds hand `heroIdx` (card
+ * removal: villain hands that share a card with Hero's are left out).
+ */
+export function villainActionProbs(sol: RiverSolution, spec: RiverSpec, path: string[], heroIdx: number): { kinds: string[]; probs: number[] } {
+  const { solver } = sol;
+  const t = tables(spec, solver.hands as [[number, number][], [number, number][]]);
+  const nv = t.n[1];
+  const rv = Float64Array.from(solver.weights[1]);
+  let node = solver.root;
+  for (const label of path) {
+    const a = node.actions.findIndex((x) => x.label === label);
+    if (a < 0) throw new Error(`no action ${label} at ${node.line}`);
+    const avg = solver.averageStrategy(node);
+    if (node.player === 1) for (let j = 0; j < nv; j++) rv[j] *= avg[a * nv + j];
+    node = node.children[a];
+  }
+  if (node.kind !== 'decision' || node.player !== 1) throw new Error('the path does not end at a villain decision');
+  const avg = solver.averageStrategy(node);
+  const probs = node.actions.map(() => 0);
+  let tot = 0;
+  for (let j = 0; j < nv; j++) {
+    if (!t.compat[0][heroIdx * nv + j]) continue;
+    tot += rv[j];
+    node.actions.forEach((_, a) => { probs[a] += rv[j] * avg[a * nv + j]; });
+  }
+  return { kinds: node.actions.map((x) => x.kind), probs: probs.map((p) => p / (tot || 1)) };
+}
