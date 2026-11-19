@@ -1,26 +1,71 @@
-// Live-path latency of version 3 against version 2: the anytime decide() with a 20-second action clock, as the
-// extension calls it (time budget, stopping rule, deal cap). Development measurement.
-//   npx tsx sim/bot/v3-latency.ts
-import { BotAgent } from '../../src/bot/agent';
-import { buildSpot } from './scenarios';
+// ============================================================
+// Latency of the extension's decision path, version 2 against version 3 (experimental), as the content script runs
+// it: BotAgent.decide with the clock budget, yielding between batches.
+//
+//   npx tsx sim/bot/v3-latency.ts [--repeat 3] [--clock 20000] [--out reports/v3-latency.md]
+//
+// For each spot and engine: time to the first (provisional) recommendation, total time, and the longest stretch of
+// synchronous work between two yields (what can freeze the page). Node on this machine, not a browser: browser
+// timings differ by a machine-dependent factor, so the report is a measurement, not a guarantee.
+// ============================================================
 
-const spots = [
-  { players: 6, hero: 'BB', cards: '5c 5d', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Kh 9d 5s:'] },
-  { players: 6, hero: 'BB', cards: 'Qs Js', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Ks 9d 5s:'] },
-  { players: 6, hero: 'BB', cards: 'Kc 4c', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Kh 9d 5s: BB x, BTN b2'] },
-  { players: 6, hero: 'BTN', cards: '7d 6d', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Kh 9c 2s: BB x'] },
-  { players: 6, hero: 'BB', cards: 'Ah Qh', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Kh 9d 5s: BB x, BTN b2, BB c', '2c: BB x, BTN x', '7h:'] },
+import * as fs from 'fs';
+import * as os from 'os';
+import { performance } from 'perf_hooks';
+import { agentFor } from '../../src/bot/ext/controller';
+import { buildSpot, SpotDef } from './scenarios';
+
+const argS = (k: string, d: string) => { const i = process.argv.indexOf(`--${k}`); return i >= 0 ? process.argv[i + 1] : d; };
+
+export const LATENCY_SPOTS: { name: string; def: SpotDef }[] = [
+  { name: 'flop, heads-up pot, facing a c-bet (check-raise possible)', def: { players: 6, hero: 'BB', cards: '9h 8h', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Th 7c 2s: BB x, BTN b1.6'] } },
+  { name: 'flop, heads-up pot, first to act out of position', def: { players: 6, hero: 'BB', cards: 'Kd Qd', lines: ['UTG f, HJ f, CO r2.5, BTN f, SB f, BB c', 'Ks 8d 3c:'] } },
+  { name: 'turn, heads-up pot, in position after a called flop bet', def: { players: 6, hero: 'BTN', cards: 'Ah Jh', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Jd 6s 2h: BB x, BTN b1.8, BB c', '9c: BB x'] } },
+  { name: 'river, heads-up pot, facing a large bet (bluff-catcher)', def: { players: 6, hero: 'BB', cards: 'Qc Td', lines: ['UTG f, HJ f, CO f, BTN r2.5, SB f, BB c', 'Qh 8s 4d: BB x, BTN b1.6, BB c', '3c: BB x, BTN b4, BB c', '2h: BB x, BTN b12'] } },
+  { name: 'flop, heads-up pot, short stacks (20 bb)', def: { players: 6, stacks: 20, hero: 'BB', cards: 'Ac 5c', lines: ['UTG f, HJ f, CO f, BTN r2.2, SB f, BB c', '5d 9c 2c: BB x, BTN b1.2'] } },
+  { name: 'flop, multiway (version 3 falls back to version 2)', def: { players: 6, hero: 'BB', cards: '7s 6s', lines: ['UTG f, HJ r2.5, CO c, BTN f, SB f, BB c', '8s 5d 2h: BB x, HJ b3, CO c'] } },
+  { name: 'preflop (version 3 falls back to version 2)', def: { players: 6, hero: 'BTN', cards: 'As Qs', lines: ['UTG f, HJ f, CO r2.5'] } },
 ];
-async function main(): Promise<void> {
-  for (const sp of spots) {
-    const b = buildSpot(sp);
-    const row: string[] = [];
-    for (const engine of ['v2', 'v3'] as const) {
-      const t0 = performance.now();
-      const d = await new BotAgent({ seed: 3, engine }).decide(b.h, b.heroSeat, b.heroCards, { timeRemainingMs: 20000 });
-      row.push(`${engine}: ${d.label} in ${(performance.now() - t0).toFixed(0)} ms, ${d.samples} deals`);
-    }
-    console.log(`${sp.cards} | ${sp.lines.slice(1).join(' / ')} :: ${row.join(' ; ')}`);
-  }
+
+interface Timing { firstMs: number; totalMs: number; maxBlockMs: number; samples: number; used: string; label: string }
+
+async function time(engine: 'v2' | 'v3', def: SpotDef, clock: number, seed: number): Promise<Timing> {
+  const b = buildSpot(def);
+  const agent = agentFor(engine, 1, seed, () => performance.now());
+  for (const [id, p] of b.profiles) agent.profiles.set(id, p);
+  const t0 = performance.now();
+  let last = t0, maxBlock = 0, first = -1;
+  const d = await agent.decide(b.h, b.heroSeat, b.heroCards, {
+    timeRemainingMs: clock, stateConfidence: 1,
+    onProgress: () => { if (first < 0) first = performance.now() - t0; },
+    yieldFn: async () => { const now = performance.now(); maxBlock = Math.max(maxBlock, now - last); await new Promise((r) => setImmediate(r)); last = performance.now(); },
+  });
+  const end = performance.now();
+  maxBlock = Math.max(maxBlock, end - last);
+  return { firstMs: first, totalMs: end - t0, maxBlockMs: maxBlock, samples: d.samples, used: d.strategy?.used ?? '?', label: d.label };
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+
+async function main(): Promise<void> {
+  const repeat = Number(argS('repeat', '3')), clock = Number(argS('clock', '20000')), out = argS('out', '');
+  const q = (xs: number[], p: number) => { const s = xs.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  const rows: string[] = [];
+  for (const s of LATENCY_SPOTS) {
+    for (const e of ['v2', 'v3'] as const) {
+      const ts: Timing[] = [];
+      for (let r = 0; r < repeat; r++) ts.push(await time(e, s.def, clock, 101 + r));
+      const f = (k: keyof Timing) => q(ts.map((t) => t[k] as number), 0.5).toFixed(0);
+      const line = `| ${s.name} | ${e} | ${ts[0].used} | ${f('firstMs')} | ${f('totalMs')} | ${f('maxBlockMs')} (max ${Math.max(...ts.map((t) => t.maxBlockMs)).toFixed(0)}) | ${f('samples')} | ${ts[0].label} |`;
+      rows.push(line);
+      console.log(line);
+    }
+  }
+  const md = [
+    '# Decision latency: version 2 and version 3 (experimental) in the extension\'s decision path', '',
+    `Generated by \`sim/bot/v3-latency.ts\` on ${new Date().toISOString().slice(0, 10)}: Node ${process.version}, ${os.cpus()[0]?.model ?? 'unknown CPU'}, ${repeat} runs per row (medians), assumed clock ${clock} ms.`,
+    'Version 3 runs with the packaged fitted tables exactly as the extension builds it (`agentFor`). "Longest block" is the longest run of synchronous work between two yields to the page: the time the page cannot respond. Browser timings differ from Node by a machine-dependent factor.', '',
+    '| Spot | Selected | Decided by | First recommendation (ms) | Total (ms) | Longest block (ms) | Deals / samples | Recommendation (run 1) |', '|---|---|---|---|---|---|---|---|', ...rows, '',
+  ].join('\n');
+  if (out) { fs.writeFileSync(out, md); console.log(`wrote ${out}`); }
+}
+
+if (process.argv[1] && /v3-latency\.ts$/.test(process.argv[1])) main().catch((e) => { console.error(e); process.exit(1); });

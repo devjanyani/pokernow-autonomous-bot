@@ -24,6 +24,9 @@ const policies = Array.from({ length: N }, (_, i) => archetypePolicy((['loose-pa
 // auto=<ms>: when nobody clicks for Hero within <ms>, the table plays check / call for Hero (a person playing by hand).
 const HIDE_FOLDS = params.get('hideFolds') === '1';
 const AUTO_MS = Number(params.get('auto') ?? 0);
+// cents=1: 0.25 / 0.50 blinds and 50.00 stacks (PokerNow's small play-money tables, amounts in cents); else 10 / 20.
+const CENTS = params.get('cents') === '1';
+const SB = CENTS ? 0.25 : 10, BB = CENTS ? 0.5 : 20;
 const stats = { hands: 0, heroActions: 0, autoActions: 0, illegalClicks: 0, errors: [] as string[] };
 (window as unknown as { __stats: typeof stats }).__stats = stats;
 
@@ -62,8 +65,8 @@ function draw(): void {
 function newHand(): void {
   const deck = shuffledDeck(rng);
   h = createHand({
-    handId: `fake${++handNo}`, buttonSeat: handNo % N, smallBlind: 10, bigBlind: 20,
-    seats: Array.from({ length: N }, (_, s) => ({ seat: s, playerId: `p${s}`, name: s === HERO ? 'Hero' : `Villain ${s}`, stack: 2000 })),
+    handId: `fake${++handNo}`, buttonSeat: handNo % N, smallBlind: SB, bigBlind: BB,
+    seats: Array.from({ length: N }, (_, s) => ({ seat: s, playerId: `p${s}`, name: s === HERO ? 'Hero' : `Villain ${s}`, stack: 100 * BB })),
   });
   holes = new Map(h.seats.map((s, i) => [s.seat, [deck[2 * i], deck[2 * i + 1]] as [CardId, CardId]]));
   board = deck.slice(40, 45);
