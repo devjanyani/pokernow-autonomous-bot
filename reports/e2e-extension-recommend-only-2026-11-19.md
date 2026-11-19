@@ -5,7 +5,7 @@ The built `dist/` was loaded as an unpacked extension and pointed at a local sta
 
 | Check | Result | Detail |
 |---|---|---|
-| extension loaded, service worker registered | pass | chrome-extension://mbdfchdjecbibapbplefelojfghmfaka/background.js |
+| extension loaded, service worker registered | pass | chrome-extension://oomgcacbgmfdkohkcmhgoioliganahib/background.js |
 | content script attached (panel host present) | pass |  |
 | live state reaches the dashboard | pass | table pgle2etest |
 | recommend mode: hand tracked with full confidence | pass | confidence 1 |
@@ -17,14 +17,14 @@ The built `dist/` was loaded as an unpacked extension and pointed at a local sta
 | dashboard live page: the decision area is never empty | pass |  |
 | recommend-only soak: hands were played (the table moved Hero by itself) | pass | 4 hands, 16 table-driven hero actions in 45s |
 | recommend-only soak: the extension clicked nothing | pass | 0 clicks |
-| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 118 samples on Hero's turn: 117 with a recommendation, 1 while the table settled, 0 blocked |
+| recommend-only soak: Hero turns had a recommendation, none was blocked | pass | 117 samples on Hero's turn: 115 with a recommendation, 2 while the table settled, 0 blocked |
 | recommend-only soak: observed and predicted actor never disagreed on a settled table | pass | 0 samples |
 | recommend-only soak: no recommendation shown outside Hero's turn | pass | 0 samples |
 | recommend-only soak: explicit status for every situation | pass | recommendation ; Waiting for opponent. ; Hand complete — waiting for next hand. ; Reading the table . ; Betting round complete — waiting for the next card. ; Engine expects Hero to act; waiting for the table to show Hero's turn. |
 | dashboard: diagnostics are in collapsible sections | pass | 9 sections |
 | dashboard: diagnostics tab shows the six state checks and the turn card | pass |  |
 | dashboard: action timeline is drawn | pass |  |
-| debug bundle exported from the dashboard | pass | 4 hands, 85 frames, extension 0.9.0, 488 KB |
+| debug bundle exported from the dashboard | pass | 4 hands, 85 frames, extension 0.9.1, 487 KB |
 | debug bundle replays offline with no divergence | pass | 4 hands replayed, 0 with a divergence |
 | hidden folds were deduced and marked as such | pass | 17 deduced actions in 4 hands |
 | replay: Hero turns usable | pass | 32 usable, 0 blocked of 38 frames |
@@ -38,4 +38,4 @@ The built `dist/` was loaded as an unpacked extension and pointed at a local sta
 | popup renders | pass |  |
 | no uncaught errors in the table page or dashboard | pass |  |
 
-Warnings logged by the extension during the run: `hand pgle2etest:h:1:393.39999999990687: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 1 -100, seat 2 +10, seat 3 +20)`; `hand pgle2etest:h:2:16211.799999999814: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 2 -100, seat 3 +10, seat 4 +20)`; `hand pgle2etest:h:3:29216.799999999814: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 4 -90, seat 5 +20)`.
+Warnings logged by the extension during the run: `hand pgle2etest:h:1:335.59999999962747: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 1 -100, seat 2 +10, seat 3 +20)`; `hand pgle2etest:h:2:16166.900000000373: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 2 -100, seat 3 +10, seat 4 +20)`; `hand pgle2etest:h:3:29167: stacks at the start of the next hand differ from the settled result (seat 0 +70, seat 4 -90, seat 5 +20)`.

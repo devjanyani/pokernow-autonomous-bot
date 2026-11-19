@@ -12,12 +12,13 @@
   `deadlineMarginMs` (3 s), `assumedClockMs` (20 s). Replaces `minThinkMs` / `maxThinkMs`.
 - **Tests:** `tests/bot/scheduler.test.ts` (18, all 15 requested cases); e2e `npm run bot:e2e:exec` (23/23, stand-in
   table, real time). The stand-in table takes `clock=<s>`.
-- **Not done:** full-suite re-run after the last test change (stopped for low memory; not restarted); existing
-  Chromium checks not re-run for 0.9.1; no live PokerNow session.
+- **Verified** (reports/RELEASE_0.9.1.md): full suite 1,211 / 1,211 with `--maxWorkers=4`; Chromium 24/24, 32/32,
+  27/27, 23/23; type-check, lint, build. Run the suite with `--maxWorkers=4` on this machine (the default worker
+  count ran it out of memory once). Not done: a live PokerNow session.
 
 ## To resume
 
-1. `npm test` (about 12 minutes; one process); `npm run build`; then one at a time `npm run bot:e2e`,
+1. `npx vitest run --maxWorkers=4` (about 12 minutes; one process); `npm run build`; then one at a time `npm run bot:e2e`,
    `npm run bot:e2e:recommend`, `npx tsx sim/bot/e2e-v3.ts`, `npm run bot:e2e:exec`.
 2. Live test on an organiser-authorised play-money table: see docs/bot/AUTHORISED_EXECUTION.md.
 

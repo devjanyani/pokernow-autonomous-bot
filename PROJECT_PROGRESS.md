@@ -16,9 +16,11 @@ Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), 
 - Validated: `tests/bot/scheduler.test.ts` 18/18 (manual clock, seeded randomness); Chromium against the stand-in
   table 23/23 ([reports/e2e-exec-2026-11-19.md](reports/e2e-exec-2026-11-19.md)): 18 turns acted on after 4.2-19.9 s,
   0 timeouts, 0 clicks without the permissions, 2.1-2.5 s with a 5 s clock and the conflict shown. Not run on the live site.
-- Open: the full-suite confirmation after the final test-timeout change was stopped by a low-memory condition (the
-  earlier full run: 1,208 of 1,211, the 3 failures being timeouts of new tests under load, since raised); the existing
-  Chromium checks (`bot:e2e`, `bot:e2e:recommend`, `e2e-v3`) were not re-run for 0.9.1.
+- Release verified ([reports/RELEASE_0.9.1.md](reports/RELEASE_0.9.1.md)), one check at a time: full suite 1,211 / 1,211
+  (four workers); Chromium autonomous v2 24/24, recommendation-only 32/32, v3 recommendation-only 27/27, execution
+  23/23; type-check, lint (0 errors) and build pass. The three earlier timeouts were CPU contention on version 3 tests
+  at the 5 s default, not defects (diagnosis in the release record). Pushed to remote `private`; `dist/` built at 0.9.1.
+- Not validated: the live PokerNow site.
 
 ## Previous checkpoint (2026-11-19, version 0.9.0)
 
