@@ -40,16 +40,25 @@ export interface Settings {
   /** Keep a bounded local recording of observations and reconstruction for the debug bundle. */
   recordDiagnostics: boolean;
   /**
-   * Strategy experiment: which engine produces recommendations. 'v2' (0.6.0, the default) or 'v1' (0.5.1).
-   * Neither is shown to be better against real opponents; see docs/bot/STRATEGY_V2_DIAGNOSIS.md.
+   * Strategy experiment: which engine produces recommendations. 'v2' (0.6.0, the default), 'v1' (0.5.1), or 'v3'
+   * (experimental, 0.9.0): version 3 is RECOMMENDATION-ONLY, mayAct() is false whenever it is selected.
+   * None is shown to be better against real opponents; see docs/bot/STRATEGY_V2_DIAGNOSIS.md and
+   * reports/PHASE_2_5_STRATEGY_BENCHMARK.md. Only an explicit choice selects version 3: a stored value that is not
+   * one of the three names reads as the default.
    */
-  strategyEngine: 'v1' | 'v2';
+  strategyEngine: StrategyEngine;
+  /**
+   * Diagnostic only, off by default: while version 2 is selected, also compute what version 3 would recommend after
+   * version 2's recommendation is complete, and show both on the dashboard. Never executed.
+   */
+  shadowV3: boolean;
 }
+export type StrategyEngine = 'v1' | 'v2' | 'v3';
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1, mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [],
   exploitWeight: 1, minThinkMs: 600, maxThinkMs: 2200, assumedClockMs: 20000, minConfidence: 0.7,
-  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2',
+  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2', shadowV3: false,
 };
 
 const clamp = (x: unknown, lo: number, hi: number, def: number): number => {
@@ -77,7 +86,9 @@ export function sanitizeSettings(raw: unknown): Settings {
     assumedClockMs: clamp(r.assumedClockMs, 3000, 120000, d.assumedClockMs),
     minConfidence: clamp(r.minConfidence, 0.4, 1, d.minConfidence),
     showPanel: r.showPanel !== false, timeoutAction: r.timeoutAction === 'nothing' ? 'nothing' : 'check-fold', selectorOverrides: overrides,
-    recordDiagnostics: r.recordDiagnostics !== false, strategyEngine: r.strategyEngine === 'v1' ? 'v1' : 'v2',
+    recordDiagnostics: r.recordDiagnostics !== false,
+    strategyEngine: r.strategyEngine === 'v1' || r.strategyEngine === 'v3' ? r.strategyEngine : 'v2',
+    shadowV3: r.shadowV3 === true,
   };
 }
 
@@ -92,9 +103,36 @@ export async function patchSettings(area: { get(k: string): Promise<Record<strin
   return next;
 }
 
-/** True only when clicking is permitted for this table right now. */
+/**
+ * True only when clicking is permitted for this table right now. Never while the experimental version 3 engine is
+ * selected: it is recommendation-only whatever the mode and authorisation (this is the single gate every click path
+ * goes through: the executor's arming, the decision loop and the timeout fallback).
+ */
 export function mayAct(s: Settings, tableId: string): boolean {
-  return s.mode === 'autonomous' && !s.estop && s.authorizationConfirmed && s.authorizedTables.includes(tableId);
+  return s.mode === 'autonomous' && !s.estop && s.authorizationConfirmed && s.authorizedTables.includes(tableId) && s.strategyEngine !== 'v3';
+}
+
+/** The strategy shown on the dashboard and the panel, whatever the current spot. */
+export interface StrategyView {
+  selected: StrategyEngine;
+  experimental: boolean;
+  /** True when nothing can be clicked because of the strategy choice (version 3). */
+  recommendOnly: boolean;
+  shadowV3: boolean;
+  /** Version 3: load status and provenance of the fitted tables packaged with the extension. */
+  artifacts: { name: string; state: string; reason: string | null; source: string | null; fittedOn: string | null; cells: number }[];
+}
+
+/** Shadow comparison (diagnostic only): version 2's recommendation next to version 3's for the same decision point. */
+export interface ShadowComparison {
+  key: string;
+  v2: { label: string; action: string; to: number | null; ev: number | null };
+  v3: { label: string; action: string; to: number | null; ev: number | null; used: string; fallback: string | null; computeMs: number } | null;
+  /** Why there is no version 3 result yet or at all (computing, cancelled, error). */
+  note: string | null;
+  sameAction: boolean | null;
+  /** Both bet or both raise, to different amounts. */
+  sizeDiffers: boolean | null;
 }
 
 export interface HandRecord {
@@ -233,6 +271,10 @@ export interface LiveState {
   decision: Decision | null;
   lastExecution: { status: string; reason: string; ms: number; action: string } | null;
   deadlineMs: number | null;
+  /** Selected strategy and, for version 3, the fitted tables (absent in states written before 0.9.0). */
+  strategy?: StrategyView;
+  /** Shadow comparison for the current decision point (diagnostic only; absent unless enabled). */
+  shadow?: ShadowComparison | null;
 }
 
 export type BotMessage =

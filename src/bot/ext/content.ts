@@ -9,7 +9,7 @@ import { PokerNowDom, SELECTORS, SelectorMap } from '../adapter/pokernow/dom';
 import { sanitizeProfile } from '../opponents/profile';
 import { LiveController } from './controller';
 import { BotMessage, DEFAULT_SETTINGS, LiveState, sanitizeSettings, Settings } from './records';
-import { actorLine, cardView, chips, decisionBanner, statusPill } from './view';
+import { actorLine, cardView, chips, decisionBanner, statusPill, strategyTag } from './view';
 
 const POLL_MS = 250;
 
@@ -144,6 +144,9 @@ class Panel {
     if (h && h.phase !== 'complete') { const a = actorLine(l); this.body.append(mk('div', `actor${a.tone === 'accent' ? ' me' : ''}`, a.text)); }
     this.body.append(mk('div', banner.kind === 'action' ? 'act' : `msg ${banner.tone === 'bad' || banner.tone === 'warn' ? banner.tone : ''}`, `${banner.provisional ? '… ' : ''}${banner.title}`));
     if (banner.sub) this.body.append(mk('div', 'sub', banner.sub));
+    // The strategy is named on the panel only when it is not the default, or when version 3 fell back.
+    const st = strategyTag(l);
+    if (st && (st.fallback || l.strategy?.selected !== 'v2')) { const e = mk('div', 'sub strat', st.fallback ? `${st.text} (see dashboard)` : st.text); e.title = st.detail; this.body.append(e); }
     const stop = document.createElement('button');
     stop.className = 'stop'; stop.type = 'button'; stop.textContent = l.estop ? 'Stopped (clear in the popup)' : 'Emergency stop';
     stop.disabled = l.estop;

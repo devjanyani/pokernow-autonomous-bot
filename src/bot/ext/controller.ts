@@ -22,7 +22,7 @@
 // displayed and logged instead of a blank panel.
 // ============================================================
 
-import { cardStr } from '../cards';
+import { CardId, cardStr } from '../cards';
 import { BotAgent, DecisionCancelled } from '../agent';
 import { GuardedExecutor, TableDriver } from '../adapter/executor';
 import { TableObs } from '../adapter/observation';
@@ -31,11 +31,25 @@ import { FrameDecision, FrameRecorder } from '../diag/recorder';
 import { buildTimeline } from '../diag/timeline';
 import { PlayerProfile, sanitizeProfile } from '../opponents/profile';
 import { Decision } from '../strategy/types';
-import { cloneHand, effectiveStack, legalActions, potTotal, tableCounts } from '../table/engine';
+import { loadV3Artifacts, V3Artifacts } from '../strategy/v3/artifacts';
+import { cloneHand, effectiveStack, HandState, legalActions, potTotal, tableCounts } from '../table/engine';
 import { SAFETY_MARGIN_MS } from '../time/budget';
 import {
-  BotMessage, DecisionRecord, Indicator, LiveState, mayAct, Readiness, Recommendation, RecommendationContext, Settings, toHandRecord,
+  BotMessage, DecisionRecord, Indicator, LiveState, mayAct, Readiness, Recommendation, RecommendationContext, Settings, ShadowComparison, StrategyView, toHandRecord,
 } from './records';
+
+/** The fitted version 3 tables, validated once per page (strategy/v3/artifacts.ts). */
+let v3Artifacts: V3Artifacts | null = null;
+export const packagedV3Artifacts = (): V3Artifacts => (v3Artifacts ??= loadV3Artifacts());
+
+/**
+ * The agent for a strategy choice. Version 3 gets the packaged fitted tables that passed validation, with the spot
+ * checks on (a table is applied only where its data covers the spot). Versions 1 and 2 are built exactly as before.
+ */
+export function agentFor(engine: Settings['strategyEngine'], exploitWeight: number, seed: number, now: () => number, artifacts: V3Artifacts = packagedV3Artifacts()): BotAgent {
+  if (engine !== 'v3') return new BotAgent({ exploitWeight, seed, now, engine });
+  return new BotAgent({ exploitWeight, seed, now, engine: 'v3', v3Population: artifacts.population, v3RiverRange: artifacts.riverRange, v3SpotChecks: true, v3ArtifactStatus: artifacts.status });
+}
 
 export interface ControllerDeps {
   observe(): TableObs;
@@ -81,22 +95,39 @@ export class LiveController {
   private lastPublish = 0;
   private lastFlush = 0;
   private pendingCompleted: CompletedHand[] = [];
+  /** Shadow comparison (diagnostic only): a version 3 agent sharing the profiles, never used to act. */
+  private shadowAgent: BotAgent | null = null;
+  private shadow: ShadowComparison | null = null;
+  private readonly artifacts: V3Artifacts;
 
-  constructor(private readonly deps: ControllerDeps, settings: Settings, seed = 1) {
+  constructor(private readonly deps: ControllerDeps, settings: Settings, private readonly seed = 1, artifacts?: V3Artifacts) {
     this.settings = settings;
-    this.agent = new BotAgent({ exploitWeight: settings.exploitWeight, seed, now: deps.now, engine: settings.strategyEngine });
+    this.artifacts = artifacts ?? packagedV3Artifacts();
+    this.agent = agentFor(settings.strategyEngine, settings.exploitWeight, seed, deps.now, this.artifacts);
+    this.syncShadow();
     this.executor = new GuardedExecutor(deps.driver, () => this.read(), { minConfidence: settings.minConfidence, sleep: deps.sleep, now: deps.now });
     this.recorder = new FrameRecorder(`${Date.now().toString(36)}-${Math.floor(deps.random() * 1e9).toString(36)}`);
   }
 
+  /** The shadow agent exists only while version 2 is selected and the comparison is switched on. */
+  private syncShadow(): void {
+    const want = this.settings.shadowV3 && this.settings.strategyEngine === 'v2';
+    if (want && !this.shadowAgent) this.shadowAgent = agentFor('v3', this.settings.exploitWeight, this.seed, this.deps.now, this.artifacts);
+    if (!want) { this.shadowAgent = null; this.shadow = null; }
+  }
+
   updateSettings(s: Settings): void {
     const exploitChanged = s.exploitWeight !== this.settings.exploitWeight || s.strategyEngine !== this.settings.strategyEngine;
+    const shadowChanged = s.shadowV3 !== this.settings.shadowV3 || exploitChanged;
     this.settings = s;
     if (exploitChanged) {
-      const old = this.agent.profiles;
-      this.agent = new BotAgent({ exploitWeight: s.exploitWeight, now: this.deps.now, engine: s.strategyEngine });
-      for (const [k, v] of old) this.agent.profiles.set(k, v);
+      // Switching engines keeps everything learned about the opponents; only the strategy changes.
+      const old = this.agent;
+      this.agent = agentFor(s.strategyEngine, s.exploitWeight, this.seed, this.deps.now, this.artifacts);
+      for (const [k, v] of old.profiles) this.agent.profiles.set(k, v);
+      for (const [k, v] of old.v3Calibration) this.agent.v3Calibration.set(k, v);
     }
+    if (shadowChanged) { this.shadowAgent = null; this.syncShadow(); }
     if (s.estop || s.mode !== 'autonomous') this.executor.stop();
     // Any settings change invalidates the decision in flight: the next tick decides again under the
     // new mode (for example recommend -> autonomous while it is Hero's turn). The executor's own
@@ -127,6 +158,7 @@ export class LiveController {
     for (const c of this.pendingCompleted.splice(0)) {
       let profiles: PlayerProfile[] = [];
       if (c.valid) {
+        this.shadowAgent?.observeV3Responses(c.hand);
         const ids = this.agent.observeHand(c.hand, c.reveals, Date.now());
         profiles = ids.map((id) => this.agent.profiles.get(id)!).filter((p) => !p.playerId.startsWith('ambiguous:'));
       } else this.diag('warn', `hand ${c.hand.handId} not used for profiles (${c.observedToEnd ? 'reconstruction invalid or uncertain' : 'ending not observed'})`);
@@ -293,9 +325,10 @@ export class LiveController {
     this.deciding = true;
     const cancelled = () => this.decisionKey !== key;
     let d: Decision;
+    const remainingOf = () => (this.deadline ?? this.deps.now() + this.settings.assumedClockMs) - this.deps.now();
     try {
       // Time available to the engine: the clock minus the think-time floor we may still add.
-      const remaining = (this.deadline ?? this.deps.now() + this.settings.assumedClockMs) - this.deps.now();
+      const remaining = remainingOf();
       d = await this.agent.decide(h, heroSeat, heroCards, {
         timeRemainingMs: remaining, stateConfidence: state.confidence, isCancelled: cancelled, yieldFn: this.deps.yieldFn,
         onProgress: (p) => { if (!cancelled()) { this.decision = p; this.publish(); } },
@@ -317,6 +350,8 @@ export class LiveController {
       this.status = `recommendation: ${d.label}`;
       this.deps.send({ type: 'bot/decision', record });
       this.publish(true);
+      // Started only now, so it never delays the recommendation; the next decision point cancels it.
+      if (this.shadowAgent && h.street !== 'preflop') void this.shadowDecide(key, h, heroSeat, heroCards, d, remainingOf());
       return;
     }
     // Bounded timing variation, never past the deadline.
@@ -342,6 +377,47 @@ export class LiveController {
     if (out.status !== 'accepted') this.diag(out.status === 'rejected' ? 'info' : 'warn', `execution ${out.status}: ${out.reason}`, req);
     this.deps.send({ type: 'bot/decision', record });
     this.publish(true);
+    if (this.shadowAgent && h.street !== 'preflop') void this.shadowDecide(key, h, heroSeat, heroCards, d, remainingOf());
+  }
+
+  /**
+   * Shadow comparison, diagnostic only: version 3's recommendation for the decision point version 2 just decided.
+   * Runs after version 2's recommendation is out (and after any click), yields to the page between batches, and is
+   * dropped the moment the decision point changes. Its result is shown, never executed, never stored as a decision.
+   */
+  private async shadowDecide(key: string, h: HandState, heroSeat: number, heroCards: [CardId, CardId], v2: Decision, remainingMs: number): Promise<void> {
+    const agent = this.shadowAgent;
+    if (!agent) return;
+    const cancelled = () => this.decisionKey !== key || this.shadowAgent !== agent;
+    const evOf = (d: Decision) => d.candidates.find((c) => c.action === d.action && c.to === d.to)?.ev ?? null;
+    const base: ShadowComparison = { key, v2: { label: v2.label, action: v2.action, to: v2.to ?? null, ev: evOf(v2) }, v3: null, note: 'version 3 computing', sameAction: null, sizeDiffers: null };
+    this.shadow = base;
+    this.publish(true);
+    // The shadow agent reads the same opponent profiles (it never writes them).
+    for (const [k, v] of this.agent.profiles) agent.profiles.set(k, v);
+    try {
+      const d = await agent.decide(h, heroSeat, heroCards, { timeRemainingMs: Math.max(1000, remainingMs), isCancelled: cancelled, yieldFn: this.deps.yieldFn });
+      if (cancelled()) return;
+      const same = d.action === v2.action;
+      this.shadow = {
+        ...base, note: null, sameAction: same, sizeDiffers: same && (d.action === 'bet' || d.action === 'raise') ? Math.abs((d.to ?? 0) - (v2.to ?? 0)) > 1e-9 : false,
+        v3: { label: d.label, action: d.action, to: d.to ?? null, ev: evOf(d), used: d.strategy?.used ?? 'v3', fallback: d.strategy?.fallback ?? null, computeMs: d.computeMs },
+      };
+      this.diag('info', `shadow comparison: version 2 ${v2.label}, version 3 ${d.label}${d.strategy?.fallback ? ` (version 3 fell back: ${d.strategy.fallback})` : ''}`, { handId: h.handId, street: h.street, version: h.events.length, sameAction: same });
+    } catch (e) {
+      if (cancelled()) return;
+      this.shadow = { ...base, note: e instanceof DecisionCancelled ? 'cancelled: the decision point changed' : `version 3 error: ${(e as Error).message}` };
+    }
+    this.publish(true);
+  }
+
+  /** What the dashboard says about the selected strategy. */
+  private strategyView(): StrategyView {
+    const s = this.settings;
+    return {
+      selected: s.strategyEngine, experimental: s.strategyEngine === 'v3', recommendOnly: s.strategyEngine === 'v3', shadowV3: s.shadowV3 && s.strategyEngine === 'v2',
+      artifacts: s.strategyEngine === 'v3' || s.shadowV3 ? this.artifacts.status.map((a) => ({ ...a })) : [],
+    };
   }
 
   /** The recommendation as it may be shown right now: only for the current decision point. */
@@ -435,6 +511,8 @@ export class LiveController {
       } : null,
       decision, lastExecution: this.lastExecution,
       deadlineMs: this.deadline !== null ? Math.max(0, this.deadline - this.deps.now()) : null,
+      strategy: this.strategyView(),
+      shadow: this.shadow && decision && this.shadow.key === this.rec.context?.key ? this.shadow : null,
     };
   }
 }

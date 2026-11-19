@@ -85,6 +85,18 @@ function liveSections(l: LiveState): HTMLElement[] {
     ['Hands tracked', String(l.tracker.handsSeen)],
     ['Recommendation state', `${l.recommendation.state}${l.recommendation.context ? ` · ${l.recommendation.context.key}` : ''}`],
   ])));
+  // Strategy: which engine is selected, which one decided the shown recommendation and why, and the fitted tables.
+  const s = l.strategy, note = l.decision?.strategy;
+  if (s) {
+    out.push(section('strategy', 'Strategy engine and opponent model', s.selected === 'v3', dl([
+      ['Selected', `${s.selected}${s.experimental ? ' (experimental, recommendation-only)' : s.selected === 'v2' ? ' (default)' : ''}`],
+      ['Shown recommendation decided by', note ? `${note.used}${note.fallback ? ` (fallback: ${note.fallback})` : ''}` : '–'],
+      ['Opponent-response model', note?.opponentModel ?? (note ? (note.used === 'v3' ? '–' : `${note.used}'s range-aware behaviour model (heuristic)`) : '–')],
+      ['Fitted tables used', note?.calibration ? `population calibration ${note.calibration.population}; river range tilt ${note.calibration.river}${note.calibration.notes.length ? ` (${note.calibration.notes.join('; ')})` : ''}` : '–'],
+      ['Shadow comparison', s.shadowV3 ? 'on (diagnostic only)' : 'off'],
+      ...s.artifacts.map((a): [string, string] => [`Table: ${a.name}`, `${a.state}${a.reason ? ` (${a.reason})` : ''}${a.source ? ` · source ${a.source}` : ''}${a.fittedOn ? ` · fitted on ${a.fittedOn}` : ''}${a.cells ? ` · ${a.cells} cells` : ''}`]),
+    ]), el('p', { class: 'muted small' }, 'The fitted tables are small aggregate files packaged with the extension (no hand or player data). A table that fails its checks is not used, and version 3 falls back to its hand-set baseline.')));
+  }
   out.push(section('issues', `Tracker messages this hand (${l.tracker.issues.length})`, l.tracker.issues.length > 0, l.tracker.issues.length ? el('ul', { class: 'warn' }, ...l.tracker.issues.map((i) => el('li', {}, i))) : el('p', { class: 'muted' }, 'None.')));
   if (l.tracker.discrepancies.length) out.push(section('discrepancies', `Discrepancies this hand (${l.tracker.discrepancies.length})`, true, el('ul', {}, ...l.tracker.discrepancies.map((x) => el('li', { class: x.blocking ? 'bad' : 'warn' }, `[${x.kind}] ${x.street}, after ${x.eventCount} events: ${x.message}`)))));
   const health = Object.entries(l.observation.health);
@@ -222,7 +234,7 @@ export async function renderDiag(root: HTMLElement, ctx: Ctx): Promise<void> {
     const frames = await ctx.storage.recentFrames();
     const b = buildBundle(frames, {
       hands: state.bundleScope === 'all' ? 'all' : Number(state.bundleScope), anonymise: state.bundleAnon, extensionVersion: ctx.version, userAgent: navigator.userAgent,
-      settings: { mode: settings.mode, minConfidence: settings.minConfidence, selectorOverrides: settings.selectorOverrides, recordDiagnostics: settings.recordDiagnostics, strategyEngine: settings.strategyEngine },
+      settings: { mode: settings.mode, minConfidence: settings.minConfidence, selectorOverrides: settings.selectorOverrides, recordDiagnostics: settings.recordDiagnostics, strategyEngine: settings.strategyEngine, shadowV3: settings.shadowV3, v3Artifacts: ctx.live()?.strategy?.artifacts ?? [] },
       framesPruned: await ctx.storage.framesPruned(), framesDroppedBeforeStorage: ctx.live()?.recorder.dropped ?? 0,
       handRecords: await ctx.storage.recentHands(5000), decisions: await ctx.storage.recentDecisions(20000), diagnostics: await ctx.storage.recentDiagnostics(300),
     });

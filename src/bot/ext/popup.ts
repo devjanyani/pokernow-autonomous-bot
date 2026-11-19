@@ -22,8 +22,9 @@ export function popupView(s: Settings, table: string | null, nick: string): { st
   return {
     state: s.estop ? 'Emergency stop is ON: nothing will be clicked.'
       : acting ? 'ACTING automatically on this table.'
-        : s.mode === 'autonomous' ? (table ? 'Autonomous selected, but this table is not authorised: recommending only.' : 'Autonomous selected. No table is open.')
-          : s.mode === 'recommend' ? 'Recommending only. Nothing is clicked.' : 'Observing only.',
+        : s.mode === 'autonomous' && s.strategyEngine === 'v3' ? 'Autonomous selected, but strategy v3 (experimental) is recommendation-only: nothing is clicked.'
+          : s.mode === 'autonomous' ? (table ? 'Autonomous selected, but this table is not authorised: recommending only.' : 'Autonomous selected. No table is open.')
+            : s.mode === 'recommend' ? `Recommending only${s.strategyEngine === 'v3' ? ' (strategy v3, experimental)' : ''}. Nothing is clicked.` : 'Observing only.',
     tone: s.estop ? 'bad' : acting ? 'warn' : s.mode === 'manual' ? '' : 'good',
     tableName: table ? (nick || shortId(table)) : 'Not on a PokerNow table',
     tableId: table && (nick || table.length > 11) ? table : '',

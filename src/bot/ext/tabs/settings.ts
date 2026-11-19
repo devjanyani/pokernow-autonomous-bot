@@ -17,7 +17,7 @@ export function renderSettings(root: HTMLElement, ctx: Ctx): void {
     i.addEventListener('change', () => void ctx.saveSettings({ [key]: Number(i.value) }).then(() => { i.value = String(ctx.settings()[key]); toast('Saved.'); }));
     return field(label, help, i);
   };
-  const toggle = (key: 'showPanel' | 'recordDiagnostics', label: string, help: string) => {
+  const toggle = (key: 'showPanel' | 'recordDiagnostics' | 'shadowV3', label: string, help: string) => {
     const c = el('input', { type: 'checkbox', id: `set-${key}`, class: 'switch' });
     c.checked = settings[key];
     c.addEventListener('change', () => void ctx.saveSettings({ [key]: c.checked }));
@@ -33,10 +33,24 @@ export function renderSettings(root: HTMLElement, ctx: Ctx): void {
     num('maxThinkMs', '100', 'Think time before acting, maximum (ms)', 'Never extends past the action clock.'));
 
   // ---- strategy experiments ----
-  const engine = select(settings.strategyEngine, [['v2', 'Version 2: two-street look-ahead (default)'], ['v1', 'Version 1: the 0.5.1 engine']], (v) => { void ctx.saveSettings({ strategyEngine: v }).then(() => toast(`Strategy engine: ${v}. Takes effect at the next decision.`)); }, 'Strategy engine');
+  const engine = select<Settings['strategyEngine']>(settings.strategyEngine, [
+    ['v2', 'Version 2: two-street look-ahead (default)'],
+    ['v1', 'Version 1: the 0.5.1 engine'],
+    ['v3', 'v3 — Experimental (recommendation-only)'],
+  ], (v) => {
+    void ctx.saveSettings({ strategyEngine: v }).then(() => {
+      toast(v === 'v3' ? 'Strategy engine: v3 (experimental). Recommendation-only: nothing will be clicked while it is selected. Takes effect at the next decision.' : `Strategy engine: ${v}. Takes effect at the next decision.`);
+      rerender();
+    });
+  }, 'Strategy engine');
   engine.id = 'set-strategyEngine';
-  const strat = group('set-strategy', 'Strategy experiments', 'These change what is recommended. Neither engine has been shown to be better against real opponents: in simulation version 2 was never ahead of version 1 and was behind at some tables (docs/bot/STRATEGY_V2_DIAGNOSIS.md). All decisions stay local either way.',
-    field('Strategy engine', 'Applies to recommendations and, when authorised, to automatic play.', engine),
+  const v3Note = settings.strategyEngine === 'v3'
+    ? el('p', { class: 'small', id: 'set-v3-note' }, 'Version 3 is experimental and recommendation-only: automatic play is disabled while it is selected, whatever the mode and table authorisation. It searches heads-up pots after the flop (check-raises, re-raises, calling now and betting later); preflop and multiway spots fall back to version 2, and the dashboard says so for each recommendation. It has not been shown to play better than version 2 (reports/PHASE_2_5_STRATEGY_BENCHMARK.md).')
+    : null;
+  const strat = group('set-strategy', 'Strategy experiments', 'These change what is recommended. No engine has been shown to be better against real opponents: in simulation version 2 was never ahead of version 1 and was behind at some tables (docs/bot/STRATEGY_V2_DIAGNOSIS.md), and version 3 is level with version 2 (reports/PHASE_2_5_STRATEGY_BENCHMARK.md). All decisions stay local.',
+    field('Strategy engine', 'Applies to recommendations and, for versions 1 and 2 when authorised, to automatic play. Version 3 only recommends.', engine),
+    v3Note,
+    settings.strategyEngine === 'v2' ? toggle('shadowV3', 'Shadow comparison with version 3', 'Diagnostic, off by default. After version 2\'s recommendation is shown, also work out what version 3 would recommend and show both on the Live tab. Never executed; never delays version 2.') : null,
     num('exploitWeight', '0.1', 'Opponent-adjustment weight', '0 = ignore opponent statistics, 1 = use them fully.'));
 
   // ---- diagnostics and data ----

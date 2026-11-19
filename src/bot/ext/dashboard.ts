@@ -14,7 +14,7 @@ import { renderSettings } from './tabs/settings';
 import { renderTables } from './tabs/tables';
 import type { Ctx } from './ui/context';
 import { $, card, dl, el, playingCard, tag } from './ui/dom';
-import { actorLine, cardView, chips, contextRows, decisionBanner, explanation, playerRows, recentTimeline, statusPill } from './view';
+import { actorLine, cardView, chips, contextRows, decisionBanner, explanation, playerRows, recentTimeline, shadowRows, statusPill, strategyTag } from './view';
 import { pct, tableLabel } from './viewmodel';
 
 const storage = new BotStorage();
@@ -57,12 +57,16 @@ function renderLive(): void {
   const banner = decisionBanner(live, now);
   const l = live && now - live.ts <= 60000 ? live : null;
   const h = l?.hand ?? null;
+  const strat = strategyTag(l);
 
   // ---- status line: one compact indicator; the detail lives on the Diagnostics tab ----
+  const stratTag = strat ? tag(`Strategy: ${strat.text}`, strat.tone, strat.detail) : null;
+  if (stratTag) stratTag.id = 'strategy-tag';
   root.append(el('div', { class: 'statusline' },
     el('span', { class: `statuspill ${pill.tone}`, id: 'status-pill' }, pill.label),
     el('span', { class: 'muted' }, pill.detail),
     l ? el('span', { class: 'spacer' }) : null,
+    stratTag,
     l ? tag(l.estop ? 'Emergency stop on' : l.acting ? 'Autonomous' : l.mode === 'manual' ? 'Manual' : 'Recommend only', l.estop ? 'warn' : 'muted') : null));
 
   // ---- table: hero and board ----
@@ -86,6 +90,9 @@ function renderLive(): void {
   dec.append(el('div', { class: 'label' }, banner.kind === 'action' ? 'Recommended action' : 'Decision'));
   dec.append(el('div', { class: banner.kind === 'action' ? 'big' : 'msg' }, `${banner.provisional ? '… ' : ''}${banner.title}`));
   if (banner.sub) dec.append(el('div', { class: 'sub' }, banner.sub));
+  if (l && l.decision && banner.kind === 'action' && strat && (strat.fallback || l.strategy?.selected === 'v3')) {
+    dec.append(el('div', { class: `sub ${strat.fallback ? 'warn' : ''}`, id: 'strategy-note' }, strat.detail));
+  }
   if (l && l.decision && banner.kind === 'action') {
     const d = l.decision;
     const why = explanation(l, true);
@@ -96,12 +103,14 @@ function renderLive(): void {
     const more = el('details', { class: 'more' }, el('summary', {}, 'All options considered, full reasoning and opponent ranges'), ct,
       el('ul', { class: 'why' }, ...explanation(l).map((w) => el('li', {}, w))),
       d.ranges.length ? el('ul', { class: 'why' }, ...d.ranges.map((r) => el('li', {}, `${r.name} [${r.line}]: ${r.summary}`))) : null,
-      el('p', { class: 'muted' }, `${d.mode} · ${d.samples} samples · ${d.computeMs.toFixed(0)} ms. EV is shown only where the engine computed one.`));
+      el('p', { class: 'muted' }, `${d.strategy ? `decided by ${d.strategy.used}${d.strategy.requested !== d.strategy.used ? ` (${d.strategy.requested} selected)` : ''} · ` : ''}${d.mode} · ${d.samples} samples · ${d.computeMs.toFixed(0)} ms. EV is shown only where the engine computed one.`));
     more.open = liveMoreOpen;
     more.addEventListener('toggle', () => { liveMoreOpen = more.open; });
     dec.append(more);
   }
   root.append(dec);
+  const sh = shadowRows(l);
+  if (sh.length) { const c = card('Shadow comparison (diagnostic only)', dl(sh)); c.id = 'shadow'; root.append(c); }
 
   if (!l) return;
 

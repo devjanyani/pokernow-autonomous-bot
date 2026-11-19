@@ -182,6 +182,43 @@ export function explanation(l: LiveState, brief = false): string[] {
   return out;
 }
 
+const ENGINE_NAMES: Record<string, string> = { v1: 'Version 1', v2: 'Version 2', v3: 'Version 3 (experimental)' };
+
+/**
+ * Which strategy is active, and, for the current recommendation, which engine actually decided it. A version 3
+ * recommendation that fell back to version 2 says so, with the reason.
+ */
+export function strategyTag(l: LiveState | null): { text: string; tone: Tone; detail: string; fallback: boolean } | null {
+  if (!l || !l.strategy) return null;
+  const s = l.strategy;
+  const name = ENGINE_NAMES[s.selected] ?? s.selected;
+  const note = l.decision?.strategy;
+  const ro = s.recommendOnly ? ' Recommendation-only: nothing is clicked while it is selected.' : '';
+  if (note && note.requested !== note.used) {
+    return { text: `${s.selected} → ${note.used} fallback`, tone: 'warn', fallback: true, detail: `${name} selected; this recommendation came from ${ENGINE_NAMES[note.used] ?? note.used}: ${note.fallback ?? 'no reason given'}.${ro}` };
+  }
+  if (s.selected === 'v3') {
+    const model = note?.opponentModel ? ` Opponent model: ${note.opponentModel}.` : '';
+    return { text: 'v3 experimental', tone: 'accent', fallback: false, detail: `${name}.${model}${ro}` };
+  }
+  return { text: s.selected, tone: 'muted', fallback: false, detail: `${name}${s.selected === 'v2' ? ' (default)' : ''}.${s.shadowV3 ? ' Shadow comparison with version 3 is on (diagnostic only).' : ''}` };
+}
+
+/** Shadow comparison rows (diagnostic only). EVs come from different value models and are not comparable. */
+export function shadowRows(l: LiveState | null): [string, string][] {
+  const sh = l?.shadow;
+  if (!sh) return [];
+  const ev = (x: number | null) => (x === null ? 'no EV' : `${x >= 0 ? '+' : ''}${x.toFixed(1)} chips`);
+  const rows: [string, string][] = [['Version 2 (selected)', `${sh.v2.label} · own estimate ${ev(sh.v2.ev)}`]];
+  if (!sh.v3) rows.push(['Version 3 (shadow)', sh.note ?? 'not computed']);
+  else {
+    rows.push(['Version 3 (shadow)', `${sh.v3.label} · own estimate ${ev(sh.v3.ev)} · ${sh.v3.computeMs.toFixed(0)} ms${sh.v3.used !== 'v3' ? ` · fell back to ${sh.v3.used}: ${sh.v3.fallback ?? ''}` : ''}`]);
+    rows.push(['Same action', sh.sameAction ? (sh.sizeDiffers ? 'yes, different size' : 'yes') : 'no']);
+  }
+  rows.push(['Note', 'Each EV is that engine\'s own estimate under its own opponent model: they are not comparable. Neither shadow line is executed.']);
+  return rows;
+}
+
 /** The last `n` actions of the hand, oldest first, with street headings. */
 export function recentTimeline(l: LiveState, n = 12): { street: string | null; text: string; deduced: boolean; uncertain: boolean }[] {
   const out: { street: string | null; text: string; deduced: boolean; uncertain: boolean }[] = [];
