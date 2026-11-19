@@ -70,7 +70,7 @@ async function main(): Promise<void> {
     }, patch);
 
     // ---- A: recommend ----
-    await setSettings({ mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [], minThinkMs: 0, maxThinkMs: 150 });
+    await setSettings({ mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [], minDelayMs: 0, maxDelayMs: 150 });
     await sleep(7000);
     check('content script attached (panel host present)', await table.evaluate(() => !!document.getElementById('poker-bot-panel-host')));
     await dash.bringToFront();

@@ -27,7 +27,21 @@ const AUTO_MS = Number(params.get('auto') ?? 0);
 // cents=1: 0.25 / 0.50 blinds and 50.00 stacks (PokerNow's small play-money tables, amounts in cents); else 10 / 20.
 const CENTS = params.get('cents') === '1';
 const SB = CENTS ? 0.25 : 10, BB = CENTS ? 0.5 : 20;
-const stats = { hands: 0, heroActions: 0, autoActions: 0, illegalClicks: 0, errors: [] as string[] };
+// clock=<s>: Hero's action clock, shown as whole seconds in a .time-to-talk element (read by the adapter); when it runs
+// out the table checks or folds for Hero (a timeout). Without it the page shows no clock.
+const CLOCK_MS = Number(params.get('clock') ?? 0) * 1000;
+const stats = { hands: 0, heroActions: 0, autoActions: 0, timeouts: 0, illegalClicks: 0, errors: [] as string[], heroTurns: [] as { start: number; end: number | null; how: string | null }[] };
+const timerEl = document.createElement('div');
+timerEl.className = 'time-to-talk';
+timerEl.style.cssText = 'position:fixed;right:8px;bottom:8px;font:20px monospace';
+document.body.appendChild(timerEl);
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+function heroTurnEnded(how: string): void {
+  const t = stats.heroTurns[stats.heroTurns.length - 1];
+  if (t && t.end === null) { t.end = performance.now(); t.how = how; }
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  timerEl.textContent = '';
+}
 (window as unknown as { __stats: typeof stats }).__stats = stats;
 
 let h: HandState;
@@ -40,6 +54,7 @@ function heroAct(kind: 'fold' | 'check' | 'call' | 'bet' | 'raise', to?: number)
   try {
     applyAction(h, { seat: HERO, kind: kind === 'bet' || kind === 'raise' ? legalActions(h)!.raiseKind : kind, to });
     stats.heroActions++;
+    heroTurnEnded(`click ${kind}`);
   } catch (e) {
     stats.illegalClicks++;
     stats.errors.push((e as Error).message);
@@ -81,6 +96,25 @@ function step(): void {
     return;
   }
   if (h.toAct === HERO) {
+    if (!stats.heroTurns.length || stats.heroTurns[stats.heroTurns.length - 1].end !== null) stats.heroTurns.push({ start: performance.now(), end: null, how: null });
+    if (CLOCK_MS > 0 && !clockTimer) {
+      const start = performance.now(), at = h.events.length, hand = handNo;
+      const tickClock = () => {
+        if (hand !== handNo || h.events.length !== at || h.toAct !== HERO) { heroTurnEnded('moved on'); return; }
+        const left = CLOCK_MS - (performance.now() - start);
+        if (left <= 0) {
+          const la = legalActions(h)!;
+          applyAction(h, { seat: HERO, kind: la.canCheck ? 'check' : 'fold' });
+          stats.timeouts++;
+          heroTurnEnded('timeout');
+          step();
+          return;
+        }
+        timerEl.textContent = String(Math.ceil(left / 1000));
+      };
+      tickClock();
+      clockTimer = setInterval(tickClock, 100);
+    }
     // Wait for a click; optionally act for Hero after a pause, like a person playing by hand.
     if (AUTO_MS > 0) {
       const at = h.events.length, hand = handNo;
@@ -89,6 +123,7 @@ function step(): void {
         const la = legalActions(h)!;
         applyAction(h, { seat: HERO, kind: la.canCheck ? 'check' : la.callAmount <= 60 ? 'call' : 'fold' });
         stats.autoActions++;
+        heroTurnEnded('table played Hero');
         step();
       }, AUTO_MS);
     }

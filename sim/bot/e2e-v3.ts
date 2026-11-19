@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     check('the v3 option reads "v3 — Experimental"', options.some((o) => o[0] === 'v3' && /^v3 — Experimental/.test(o[1])));
     check('v2 is the default in a fresh profile', (await dash.locator('#set-strategyEngine').inputValue()) === 'v2' && ((await stored())?.strategyEngine ?? 'v2') === 'v2', `select shows ${await dash.locator('#set-strategyEngine').inputValue()}, stored ${(await stored())?.strategyEngine ?? '(nothing stored: default)'}`);
     check('shadow comparison is off by default', !(await dash.locator('#set-shadowV3').isChecked()));
-    await setSettings({ mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [], minThinkMs: 0, maxThinkMs: 150 });
+    await setSettings({ mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [], minDelayMs: 0, maxDelayMs: 150 });
     await table.goto(urlFor(3, 17));
     await openTab('live');
     let l: Live | undefined;
