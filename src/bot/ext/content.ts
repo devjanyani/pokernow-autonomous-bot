@@ -215,7 +215,7 @@ async function main(): Promise<void> {
   };
   setInterval(tick, POLL_MS);
   // Hand any recorded frames to storage before the page goes away.
-  addEventListener('pagehide', () => controller.flush());
+  addEventListener('pagehide', () => { controller.cancelPending('the page was closed or reloaded'); controller.flush(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') controller.flush(); });
   // React to page changes sooner than the poll, coalesced to one read per frame.
   new MutationObserver(() => { if (!scheduled) { scheduled = true; setTimeout(tick, 40); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });

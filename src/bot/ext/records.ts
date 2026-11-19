@@ -25,9 +25,15 @@ export interface Settings {
   authorizedTables: string[];
   /** 0..1 weight of opponent-specific adjustments. */
   exploitWeight: number;
-  /** Bounded think-time variation before acting (ms). Never extends past the action clock. */
-  minThinkMs: number;
-  maxThinkMs: number;
+  /**
+   * Action scheduling on authorised tables (scheduler.ts). One delay per decision opportunity, drawn when Hero's
+   * turn is confirmed, uniform in [minDelayMs, maxDelayMs] (the minimum when randomDelay is off), the same for every
+   * action type, computation included. Never past the deadline minus deadlineMarginMs.
+   */
+  randomDelay: boolean;
+  minDelayMs: number;
+  maxDelayMs: number;
+  deadlineMarginMs: number;
   /** Action clock assumed when the page does not show one (ms). */
   assumedClockMs: number;
   /** Minimum state confidence required to act. */
@@ -52,13 +58,19 @@ export interface Settings {
    * version 2's recommendation is complete, and show both on the dashboard. Never executed.
    */
   shadowV3: boolean;
+  /**
+   * Experimental, off by default: let version 3 act on tables that are authorised for autonomous play. Separate from
+   * choosing version 3 (choosing it never authorises clicking) and from the table authorisation (both are needed).
+   * Cleared whenever the authorisation confirmation is withdrawn.
+   */
+  v3ExecutionOptIn: boolean;
 }
 export type StrategyEngine = 'v1' | 'v2' | 'v3';
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1, mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [],
-  exploitWeight: 1, minThinkMs: 600, maxThinkMs: 2200, assumedClockMs: 20000, minConfidence: 0.7,
-  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2', shadowV3: false,
+  exploitWeight: 1, randomDelay: true, minDelayMs: 4000, maxDelayMs: 20000, deadlineMarginMs: 3000, assumedClockMs: 20000, minConfidence: 0.7,
+  showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2', shadowV3: false, v3ExecutionOptIn: false,
 };
 
 const clamp = (x: unknown, lo: number, hi: number, def: number): number => {
@@ -71,7 +83,8 @@ export function sanitizeSettings(raw: unknown): Settings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
   const mode: Mode = r.mode === 'manual' || r.mode === 'recommend' || r.mode === 'autonomous' ? r.mode : d.mode;
-  const minThinkMs = clamp(r.minThinkMs, 0, 10000, d.minThinkMs);
+  const minDelayMs = clamp(r.minDelayMs, 0, 60000, d.minDelayMs);
+  const authorizationConfirmed = r.authorizationConfirmed === true;
   const overrides: Record<string, string> = {};
   if (r.selectorOverrides && typeof r.selectorOverrides === 'object') {
     for (const [k, v] of Object.entries(r.selectorOverrides as Record<string, unknown>)) {
@@ -79,16 +92,18 @@ export function sanitizeSettings(raw: unknown): Settings {
     }
   }
   return {
-    version: 1, mode, estop: r.estop === true, authorizationConfirmed: r.authorizationConfirmed === true,
+    version: 1, mode, estop: r.estop === true, authorizationConfirmed,
     authorizedTables: Array.isArray(r.authorizedTables) ? r.authorizedTables.filter((t): t is string => typeof t === 'string' && /^[\w-]{1,80}$/.test(t)).slice(0, 50) : [],
-    exploitWeight: clamp(r.exploitWeight, 0, 1, d.exploitWeight), minThinkMs,
-    maxThinkMs: Math.max(minThinkMs, clamp(r.maxThinkMs, 0, 15000, d.maxThinkMs)),
+    exploitWeight: clamp(r.exploitWeight, 0, 1, d.exploitWeight),
+    randomDelay: r.randomDelay !== false, minDelayMs, maxDelayMs: Math.max(minDelayMs, clamp(r.maxDelayMs, 0, 120000, d.maxDelayMs)),
+    deadlineMarginMs: clamp(r.deadlineMarginMs, 500, 10000, d.deadlineMarginMs),
     assumedClockMs: clamp(r.assumedClockMs, 3000, 120000, d.assumedClockMs),
     minConfidence: clamp(r.minConfidence, 0.4, 1, d.minConfidence),
     showPanel: r.showPanel !== false, timeoutAction: r.timeoutAction === 'nothing' ? 'nothing' : 'check-fold', selectorOverrides: overrides,
     recordDiagnostics: r.recordDiagnostics !== false,
     strategyEngine: r.strategyEngine === 'v1' || r.strategyEngine === 'v3' ? r.strategyEngine : 'v2',
     shadowV3: r.shadowV3 === true,
+    v3ExecutionOptIn: r.v3ExecutionOptIn === true && authorizationConfirmed,
   };
 }
 
@@ -104,20 +119,33 @@ export async function patchSettings(area: { get(k: string): Promise<Record<strin
 }
 
 /**
- * True only when clicking is permitted for this table right now. Never while the experimental version 3 engine is
- * selected: it is recommendation-only whatever the mode and authorisation (this is the single gate every click path
- * goes through: the executor's arming, the decision loop and the timeout fallback).
+ * True only when clicking is permitted for this table right now: autonomous mode, no emergency stop, the
+ * organiser-authorisation confirmation, this table authorised, and, while the experimental version 3 engine is
+ * selected, the separate version 3 execution opt-in. This is the single gate every click path goes through (the
+ * executor's arming, the scheduled action just before it is executed, and the timeout fallback).
  */
 export function mayAct(s: Settings, tableId: string): boolean {
-  return s.mode === 'autonomous' && !s.estop && s.authorizationConfirmed && s.authorizedTables.includes(tableId) && s.strategyEngine !== 'v3';
+  return executionStatus(s, tableId).enabled;
+}
+
+/** Whether execution is enabled on this table and, when it is not, the first reason. */
+export function executionStatus(s: Settings, tableId: string): { enabled: boolean; reason: string } {
+  if (s.estop) return { enabled: false, reason: 'emergency stop is on' };
+  if (s.mode !== 'autonomous') return { enabled: false, reason: `mode is ${s.mode === 'recommend' ? 'recommend' : 'manual'}` };
+  if (!s.authorizationConfirmed) return { enabled: false, reason: 'the organiser-authorisation confirmation is not given' };
+  if (!s.authorizedTables.includes(tableId)) return { enabled: false, reason: 'this table is not authorised' };
+  if (s.strategyEngine === 'v3' && !s.v3ExecutionOptIn) return { enabled: false, reason: 'version 3 is recommendation-only unless its experimental execution permission is switched on' };
+  return { enabled: true, reason: s.strategyEngine === 'v3' ? 'authorised table, version 3 execution permission on (experimental)' : 'authorised table' };
 }
 
 /** The strategy shown on the dashboard and the panel, whatever the current spot. */
 export interface StrategyView {
   selected: StrategyEngine;
   experimental: boolean;
-  /** True when nothing can be clicked because of the strategy choice (version 3). */
+  /** True when nothing can be clicked because of the strategy choice (version 3 without its execution opt-in). */
   recommendOnly: boolean;
+  /** Version 3 is selected and its experimental execution permission is on. */
+  v3Execution: boolean;
   shadowV3: boolean;
   /** Version 3: load status and provenance of the fitted tables packaged with the extension. */
   artifacts: { name: string; state: string; reason: string | null; source: string | null; fittedOn: string | null; cells: number }[];
@@ -188,7 +216,7 @@ export interface DecisionRecord {
   pot: number;
   decision: Decision;
   /** What happened to it: shown only, executed, rejected ... */
-  execution: { status: string; reason: string; ms: number } | null;
+  execution: { status: string; reason: string; ms: number; timing?: ExecutionTiming } | null;
   /** The exact state the recommendation was computed for. */
   context?: RecommendationContext;
 }
@@ -275,6 +303,34 @@ export interface LiveState {
   strategy?: StrategyView;
   /** Shadow comparison for the current decision point (diagnostic only; absent unless enabled). */
   shadow?: ShadowComparison | null;
+  /** Whether execution is enabled on this table, and why not (absent in states written before 0.9.1). */
+  execution?: { enabled: boolean; reason: string };
+  /** Authorised-play scheduling: the pending action, its timing, the last cancellation (absent before 0.9.1). */
+  schedule?: ScheduleView;
+}
+
+/** How one executed action was timed. Computation is part of the delay, not added to it. */
+export interface ExecutionTiming {
+  targetDelayMs: number;
+  /** From the confirmed opportunity to the click. */
+  actualDelayMs: number;
+  computeMs: number;
+  waitedMs: number;
+  deadlineSource: string;
+  conflict: string | null;
+  capped: string | null;
+}
+
+export interface ScheduleView {
+  policy: { randomDelay: boolean; minDelayMs: number; maxDelayMs: number; deadlineMarginMs: number; assumedClockMs: number };
+  /** The action waiting to be executed for the current decision point, if any. */
+  pending: null | {
+    key: string; label: string; decidedBy: string; fallback: string | null; state: 'waiting' | 'executing';
+    targetDelayMs: number; computeMs: number; remainingMs: number; deadlineInMs: number; deadlineSource: string;
+    conflict: string | null; capped: string | null;
+  };
+  lastCancel: { label: string | null; reason: string; agoMs: number } | null;
+  lastExecuted: { label: string; reason: string; delayMs: number; computeMs: number; waitedMs: number; conflict: string | null; agoMs: number } | null;
 }
 
 export type BotMessage =

@@ -32,8 +32,8 @@ describe('settings and message validation', () => {
     expect(mayAct({ ...ok, mode: 'recommend' }, 't1')).toBe(false);
   });
   it('sanitises stored settings', () => {
-    const s = sanitizeSettings({ mode: 'yolo', estop: 'yes', exploitWeight: 9, minThinkMs: -5, maxThinkMs: 1, authorizedTables: ['ok-1', '<script>', 7], selectorOverrides: { foldBtn: 'button.f', 'bad key': 'x', n: 5 }, junk: 1 });
-    expect(s).toMatchObject({ mode: 'recommend', estop: false, exploitWeight: 1, minThinkMs: 0, maxThinkMs: 1, authorizedTables: ['ok-1'], selectorOverrides: { foldBtn: 'button.f' } });
+    const s = sanitizeSettings({ mode: 'yolo', estop: 'yes', exploitWeight: 9, minDelayMs: -5, maxDelayMs: 1, deadlineMarginMs: 99999, randomDelay: 'no', authorizedTables: ['ok-1', '<script>', 7], selectorOverrides: { foldBtn: 'button.f', 'bad key': 'x', n: 5 }, junk: 1 });
+    expect(s).toMatchObject({ mode: 'recommend', estop: false, exploitWeight: 1, minDelayMs: 0, maxDelayMs: 1, deadlineMarginMs: 10000, randomDelay: true, v3ExecutionOptIn: false, authorizedTables: ['ok-1'], selectorOverrides: { foldBtn: 'button.f' } });
     expect(sanitizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect('junk' in s).toBe(false);
   });
@@ -101,7 +101,7 @@ async function playLive(opts: { settings: Partial<Settings>; hands: number; play
   const world: World = { h: null as unknown as HandState, holes: new Map(), clicks: [], tableId: 'test' };
   const sent: BotMessage[] = [];
   const store = new BotStorage(new IDBFactory());
-  const settings = sanitizeSettings({ ...DEFAULT_SETTINGS, minThinkMs: 0, maxThinkMs: 0, ...opts.settings });
+  const settings = sanitizeSettings({ ...DEFAULT_SETTINGS, minDelayMs: 0, maxDelayMs: 0, ...opts.settings });
   let t = 0;
   const deps: ControllerDeps = {
     observe: () => { const o = render(world.h, heroSeat, world.holes, (t += 50)); opts.mutateObs?.(o); return o; },

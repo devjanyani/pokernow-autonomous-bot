@@ -84,6 +84,7 @@ export class GuardedExecutor {
     const h = state.hand;
     if (!h || !state.valid) return { ok: false, reason: 'no valid hand state' };
     if (state.unsupported) return { ok: false, reason: 'unsupported game' };
+    if (state.blockers.length) return { ok: false, reason: `state needs reconciliation: ${state.blockers[0]}` };
     if (state.confidence < this.o.minConfidence) return { ok: false, reason: `state confidence ${state.confidence.toFixed(2)} below ${this.o.minConfidence}` };
     if (h.handId !== req.handId) return { ok: false, reason: 'hand changed' };
     if (h.street !== req.street) return { ok: false, reason: 'street changed' };

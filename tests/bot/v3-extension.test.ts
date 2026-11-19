@@ -308,7 +308,7 @@ describe('strategy selection, persistence and recommendation-only enforcement', 
     expect(mayAct(ok, 'test')).toBe(true);
     expect(mayAct({ ...ok, strategyEngine: 'v3' }, 'test')).toBe(false);
     expect(popupView({ ...ok, strategyEngine: 'v3' }, 'test', '').state).toMatch(/v3 \(experimental\) is recommendation-only: nothing is clicked/);
-    const s = new Session(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTHORISED, minThinkMs: 0, maxThinkMs: 0, strategyEngine: 'v3' }), 3, 21);
+    const s = new Session(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTHORISED, minDelayMs: 0, maxDelayMs: 0, strategyEngine: 'v3' }), 3, 21);
     await s.play(8);
     expect(s.world.clicks).toEqual([]);
     const decs = s.decisions();
@@ -342,7 +342,7 @@ describe('strategy selection, persistence and recommendation-only enforcement', 
   }, 60000);
 
   it('12. unconfirmed state: when the buttons contradict the reconstruction, version 3 recommends nothing for that spot', async () => {
-    const s = new Session(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTHORISED, minThinkMs: 0, maxThinkMs: 0, strategyEngine: 'v3' }), 3, 6, (o) => { if (o.controls.call !== null) o.controls.call += 13; });
+    const s = new Session(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTHORISED, minDelayMs: 0, maxDelayMs: 0, strategyEngine: 'v3' }), 3, 6, (o) => { if (o.controls.call !== null) o.controls.call += 13; });
     await s.play(6);
     expect(s.world.clicks).toEqual([]);
     expect(s.decisions().filter((r) => (r.context?.toCall ?? 0) > 0)).toEqual([]);

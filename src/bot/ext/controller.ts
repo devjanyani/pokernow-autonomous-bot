@@ -35,8 +35,9 @@ import { loadV3Artifacts, V3Artifacts } from '../strategy/v3/artifacts';
 import { cloneHand, effectiveStack, HandState, legalActions, potTotal, tableCounts } from '../table/engine';
 import { SAFETY_MARGIN_MS } from '../time/budget';
 import {
-  BotMessage, DecisionRecord, Indicator, LiveState, mayAct, Readiness, Recommendation, RecommendationContext, Settings, ShadowComparison, StrategyView, toHandRecord,
+  BotMessage, DecisionRecord, executionStatus, Indicator, LiveState, mayAct, Readiness, Recommendation, RecommendationContext, ScheduleView, Settings, ShadowComparison, StrategyView, toHandRecord,
 } from './records';
+import { ActionScheduler, TimingPolicy } from './scheduler';
 
 /** The fitted version 3 tables, validated once per page (strategy/v3/artifacts.ts). */
 let v3Artifacts: V3Artifacts | null = null;
@@ -99,6 +100,12 @@ export class LiveController {
   private shadowAgent: BotAgent | null = null;
   private shadow: ShadowComparison | null = null;
   private readonly artifacts: V3Artifacts;
+  /** Authorised-play timing: one plan per decision opportunity, at most one pending action. */
+  readonly scheduler: ActionScheduler;
+  /** Incremented whenever the decision in flight is invalidated, so an older computation or wait can never act. */
+  private gen = 0;
+  /** A frame without Hero's turn has been seen on this page (false right after a load or refresh). */
+  private sawOtherTurn = false;
 
   constructor(private readonly deps: ControllerDeps, settings: Settings, private readonly seed = 1, artifacts?: V3Artifacts) {
     this.settings = settings;
@@ -107,7 +114,16 @@ export class LiveController {
     this.syncShadow();
     this.executor = new GuardedExecutor(deps.driver, () => this.read(), { minConfidence: settings.minConfidence, sleep: deps.sleep, now: deps.now });
     this.recorder = new FrameRecorder(`${Date.now().toString(36)}-${Math.floor(deps.random() * 1e9).toString(36)}`);
+    this.scheduler = new ActionScheduler(deps.now, deps.random);
   }
+
+  private policy(): TimingPolicy {
+    const s = this.settings;
+    return { randomDelay: s.randomDelay, minDelayMs: s.minDelayMs, maxDelayMs: s.maxDelayMs, deadlineMarginMs: s.deadlineMarginMs, assumedClockMs: s.assumedClockMs };
+  }
+
+  /** Cancel whatever is pending (page hidden, controller replaced). Later ticks plan again from the table. */
+  cancelPending(reason: string): void { this.clearDecision(reason); this.publish(true); }
 
   /** The shadow agent exists only while version 2 is selected and the comparison is switched on. */
   private syncShadow(): void {
@@ -117,6 +133,13 @@ export class LiveController {
   }
 
   updateSettings(s: Settings): void {
+    const old = this.settings;
+    const table = this.lastObs?.tableId ?? 'unknown';
+    const why = s.estop && !old.estop ? 'emergency stop'
+      : s.mode !== old.mode ? `mode changed to ${s.mode}`
+        : mayAct(old, table) && !mayAct(s, table) ? `execution no longer permitted (${executionStatus(s, table).reason})`
+          : s.strategyEngine !== old.strategyEngine ? `strategy changed from ${old.strategyEngine} to ${s.strategyEngine}`
+            : 'settings changed';
     const exploitChanged = s.exploitWeight !== this.settings.exploitWeight || s.strategyEngine !== this.settings.strategyEngine;
     const shadowChanged = s.shadowV3 !== this.settings.shadowV3 || exploitChanged;
     this.settings = s;
@@ -132,7 +155,7 @@ export class LiveController {
     // Any settings change invalidates the decision in flight: the next tick decides again under the
     // new mode (for example recommend -> autonomous while it is Hero's turn). The executor's own
     // used-decision-point record still prevents a second click for a point already acted on.
-    this.decisionKey = null; this.decision = null;
+    this.clearDecision(why);
     this.publish(true);
   }
 
@@ -188,12 +211,16 @@ export class LiveController {
     for (const id of ids) { this.agent.profiles.delete(id); this.requested.delete(id); }
   }
 
-  /** Drop everything that belongs to an earlier decision point. */
-  private clearDecision(): void { this.decisionKey = null; this.decision = null; }
+  /** Drop everything that belongs to an earlier decision point, including a pending action (with the reason). */
+  private clearDecision(reason = 'the decision point changed'): void {
+    if (this.decisionKey !== null || this.scheduler.pending) this.gen++;
+    this.scheduler.cancel(reason);
+    this.decisionKey = null; this.decision = null;
+  }
 
   /** Hero's turn is shown but no recommendation can be given: say why, on screen and in the log (once per state). */
   private suppress(obs: TableObs, state: TrackerState, why: string, now: number): void {
-    this.clearDecision();
+    this.clearDecision(`table state not confirmed: ${why}`);
     this.rec = { state: 'blocked', reason: why, context: null };
     this.status = `${MSG.unavailable} ${why}`;
     const k = `${state.hand?.handId ?? state.handsSeen}|${state.eventCount}|${why}`;
@@ -210,14 +237,14 @@ export class LiveController {
 
   /** The page is mid-update (first sight of a change that does not add up yet): wait for a stable read, show nothing stale. */
   private settling(state: TrackerState): void {
-    this.clearDecision();
+    this.clearDecision('the page is mid-update');
     this.status = 'Reading the table (waiting for a stable snapshot).';
     this.rec = { state: 'none', reason: `${this.status} ${state.blockers[0] ?? (state.actorLagging ? 'the page still shows the previous turn' : '')}`.trim(), context: null };
   }
 
   /** Not Hero's decision: one explicit status per situation (never a blank panel). */
   private idle(state: TrackerState): void {
-    this.clearDecision(); this.turnKey = null; this.deadline = null;
+    this.clearDecision('it is no longer Hero\'s turn on the table'); this.turnKey = null; this.deadline = null;
     const h = state.hand;
     let s: string;
     if (state.unsupported) s = 'Unsupported game: observing only.';
@@ -254,6 +281,7 @@ export class LiveController {
     this.handleCompleted(obs.tableId);
     this.requestProfiles();
     this.executor.armed = mayAct(this.settings, obs.tableId);
+    if (!obs.heroToAct) this.sawOtherTurn = true;
     const h = state.hand;
     const now = this.deps.now();
     const predictedHero = !!h && state.heroSeat !== null && h.toAct === state.heroSeat;
@@ -279,7 +307,9 @@ export class LiveController {
     const key = `${h.handId}|${h.street}|${state.eventCount}`;
     if (this.turnKey !== key) {
       // A new decision point (new hand, new street, or the action came back to Hero): everything older is stale.
-      this.turnKey = key; this.turnStart = now; this.clearDecision();
+      const prev = this.turnKey?.split('|');
+      const change = !prev || prev.length < 3 ? 'a new decision point' : prev[0] !== h.handId ? 'the hand changed' : prev[1] !== h.street ? 'the street changed' : `new action at the table (state version ${prev[2]} -> ${state.eventCount})`;
+      this.turnKey = key; this.turnStart = now; this.clearDecision(change);
       this.deadline = now + (obs.timeRemainingMs ?? this.settings.assumedClockMs);
     } else if (obs.timeRemainingMs !== null) this.deadline = now + obs.timeRemainingMs;
     const la = legalActions(h)!;
@@ -291,6 +321,10 @@ export class LiveController {
       this.status = 'Manual mode: observing only.';
       this.rec = { state: 'off', reason: this.status, context };
       return;
+    }
+    // Authorised play: the opportunity's timing plan (created once, its delay drawn before any recommendation).
+    if (mayAct(this.settings, obs.tableId)) {
+      this.scheduler.plan(key, this.turnStart, { at: this.deadline, observed: obs.timeRemainingMs !== null }, this.policy(), !this.sawOtherTurn);
     }
     if (this.decisionKey !== key) {
       this.decision = null;
@@ -323,7 +357,9 @@ export class LiveController {
     const obs = this.lastObs!;
     this.decisionKey = key;
     this.deciding = true;
-    const cancelled = () => this.decisionKey !== key;
+    const gen = ++this.gen;
+    const cancelled = () => this.gen !== gen || this.decisionKey !== key;
+    const t0 = this.deps.now();
     let d: Decision;
     const remainingOf = () => (this.deadline ?? this.deps.now() + this.settings.assumedClockMs) - this.deps.now();
     try {
@@ -354,13 +390,20 @@ export class LiveController {
       if (this.shadowAgent && h.street !== 'preflop') void this.shadowDecide(key, h, heroSeat, heroCards, d, remainingOf());
       return;
     }
-    // Bounded timing variation, never past the deadline.
-    const elapsed = this.deps.now() - this.turnStart;
-    const target = this.settings.minThinkMs + this.deps.random() * (this.settings.maxThinkMs - this.settings.minThinkMs);
-    const room = (this.deadline ?? Infinity) - this.deps.now() - SAFETY_MARGIN_MS;
-    const wait = Math.max(0, Math.min(target - elapsed, room));
-    if (wait > 0) { this.status = `acting in ${(wait / 1000).toFixed(1)}s: ${d.label}`; this.publish(true); await this.deps.sleep(wait); }
-    if (cancelled()) return;
+    // Scheduled execution (scheduler.ts): due at the opportunity's start plus its drawn delay, computation included,
+    // never later than the deadline minus the safety margin.
+    const plan = this.scheduler.get(key) ?? this.scheduler.plan(key, this.turnStart, { at: this.deadline, observed: obs.timeRemainingMs !== null }, this.policy(), !this.sawOtherTurn);
+    const fb = d.strategy?.fallback ? ` (${d.strategy.requested} -> ${d.strategy.used} fallback)` : '';
+    const pending = this.scheduler.arm({ key, label: d.label, decidedBy: d.strategy?.used ?? this.settings.strategyEngine, fallback: d.strategy?.fallback ?? null, computeMs: this.deps.now() - Math.min(t0, plan.startedAt) });
+    if (!pending) return;
+    if (pending.plannedWaitMs > 0) { this.status = `acting in ${(pending.plannedWaitMs / 1000).toFixed(1)}s: ${d.label}${fb}`; this.publish(true); }
+    if (plan.conflict) this.diag('warn', `deadline conflict: ${plan.conflict}`, { handId: h.handId, street: h.street, version: h.events.length });
+    const due = await this.scheduler.waitUntilDue(key, this.deps.sleep, cancelled);
+    if (!due || cancelled()) { this.scheduler.cancel('the decision point changed'); return; }
+    // Immediately before the click: the permission again (the executor then re-reads and re-validates the table).
+    this.executor.armed = mayAct(this.settings, obs.tableId);
+    if (!this.executor.armed) { this.scheduler.cancel(`execution no longer permitted (${executionStatus(this.settings, obs.tableId).reason})`); this.publish(true); return; }
+    this.scheduler.firing(key);
     const req = { action: d.action, to: d.to, handId: h.handId, street: h.street, eventCount: h.events.length };
     let out = await this.executor.execute(req);
     if (out.status === 'failed' && (d.action === 'bet' || d.action === 'raise')) {
@@ -371,9 +414,14 @@ export class LiveController {
       this.diag('warn', `bet entry failed (${out.reason}); falling back to ${alt}`);
       out = await this.executor.execute({ ...req, action: alt, to: undefined });
     }
-    this.lastExecution = { status: out.status, reason: out.reason, ms: out.ms, action: d.label };
-    record.execution = { status: out.status, reason: out.reason, ms: out.ms };
-    this.status = `${out.status}: ${d.label} (${out.reason})`;
+    this.scheduler.fired(key, `${d.label}${fb}`, `${out.status}: ${out.reason}`);
+    const fired = this.scheduler.lastFired!;
+    this.lastExecution = { status: out.status, reason: out.reason, ms: out.ms, action: `${d.label}${fb}` };
+    record.execution = {
+      status: out.status, reason: out.reason, ms: out.ms,
+      timing: { targetDelayMs: plan.targetDelayMs, actualDelayMs: fired.delayMs, computeMs: fired.computeMs, waitedMs: fired.waitedMs, deadlineSource: plan.deadlineSource, conflict: plan.conflict, capped: plan.capped },
+    };
+    this.status = `${out.status}: ${d.label}${fb} (${out.reason})`;
     if (out.status !== 'accepted') this.diag(out.status === 'rejected' ? 'info' : 'warn', `execution ${out.status}: ${out.reason}`, req);
     this.deps.send({ type: 'bot/decision', record });
     this.publish(true);
@@ -415,7 +463,8 @@ export class LiveController {
   private strategyView(): StrategyView {
     const s = this.settings;
     return {
-      selected: s.strategyEngine, experimental: s.strategyEngine === 'v3', recommendOnly: s.strategyEngine === 'v3', shadowV3: s.shadowV3 && s.strategyEngine === 'v2',
+      selected: s.strategyEngine, experimental: s.strategyEngine === 'v3', recommendOnly: s.strategyEngine === 'v3' && !s.v3ExecutionOptIn,
+      v3Execution: s.strategyEngine === 'v3' && s.v3ExecutionOptIn, shadowV3: s.shadowV3 && s.strategyEngine === 'v2',
       artifacts: s.strategyEngine === 'v3' || s.shadowV3 ? this.artifacts.status.map((a) => ({ ...a })) : [],
     };
   }
@@ -513,6 +562,21 @@ export class LiveController {
       deadlineMs: this.deadline !== null ? Math.max(0, this.deadline - this.deps.now()) : null,
       strategy: this.strategyView(),
       shadow: this.shadow && decision && this.shadow.key === this.rec.context?.key ? this.shadow : null,
+      execution: executionStatus(this.settings, tableId),
+      schedule: this.scheduleView(),
+    };
+  }
+
+  private scheduleView(): ScheduleView {
+    const now = this.deps.now(), sc = this.scheduler, p = sc.pending, plan = p ? sc.get(p.key) : undefined;
+    return {
+      policy: this.policy(),
+      pending: p && plan ? {
+        key: p.key, label: p.label, decidedBy: p.decidedBy, fallback: p.fallback, state: p.state, targetDelayMs: plan.targetDelayMs, computeMs: p.computeMs,
+        remainingMs: Math.max(0, plan.dueAt - now), deadlineInMs: plan.deadlineAt - now, deadlineSource: plan.deadlineSource, conflict: plan.conflict, capped: plan.capped,
+      } : null,
+      lastCancel: sc.lastCancel ? { label: sc.lastCancel.label, reason: sc.lastCancel.reason, agoMs: now - sc.lastCancel.at } : null,
+      lastExecuted: sc.lastFired ? { label: sc.lastFired.label ?? '', reason: sc.lastFired.reason, delayMs: sc.lastFired.delayMs, computeMs: sc.lastFired.computeMs, waitedMs: sc.lastFired.waitedMs, conflict: sc.lastFired.conflict, agoMs: now - sc.lastFired.at } : null,
     };
   }
 }
