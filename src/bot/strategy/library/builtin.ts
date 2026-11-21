@@ -11,6 +11,7 @@ import { charts as greenline, Cell, Chart } from '../../../core/ranges/greenline
 import { charts as pekarstas } from '../../../core/ranges/pekarstas-gto';
 import { StrategyLibrary } from './library';
 import { HandMix, PACK_FORMAT, PACK_VERSION, PreflopScenario, PreflopSpot, StrategyPack } from './types';
+import type { Precedence } from './library';
 import { USER_PACKS } from '../packs';
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -53,11 +54,33 @@ function spotFromKey(key: string, chart: Chart): PreflopSpot | null {
   return { id: key, scenario, hero, villain, hands };
 }
 
-function chartPack(id: string, name: string, tool: string, charts: Record<string, Chart>): StrategyPack {
+/**
+ * What the Greenline source says about its own pages (comments in core/ranges/greenline-gto.ts, transcribed from the
+ * PDF). Pages 6, 8, 9, 10 and 11 give opponent-dependent colours ("3bet vs weak opponents who fold to 3bet", "fold to
+ * 4bet from passive opponents (otherwise call)", "3bet and call 4bet from passive opponents", "vs tight 3bettor"),
+ * which the transcription merged into single actions. Pages 4 (open), 5 (isolate) and 7 (big blind defence) are
+ * unconditional. Open sizes are stated on page 4.
+ */
+const GREENLINE_CONDITIONAL: [RegExp, string][] = [
+  [/^SB-vs-open-/, 'Greenline page 6 (small blind defence) marks part of these 3-bets as "vs weak opponents who fold to 3bet"'],
+  [/^BTN-vs-open-/, 'Greenline page 9 (3-bet in position) mixes "3bet and fold", "3bet and call 4bet from passive opponents" and "fold to 4bet from passive opponents (otherwise call)"'],
+  [/^BB-vs-4bet-/, 'Greenline page 8 says "call 4bet, fold to 4bet from passive opponents (otherwise call)"'],
+  [/-vs-3bet-/, 'Greenline pages 10-11 (defence vs 3-bet) give separate ranges by 3-bettor type ("vs tight 3bettor")'],
+];
+const GREENLINE_OPEN_BB: Record<string, number> = { UTG: 3, MP: 3, CO: 2.5, BTN: 2.5, SB: 3 };
+
+function annotateGreenline(sp: PreflopSpot): PreflopSpot {
+  const c = GREENLINE_CONDITIONAL.find(([re]) => re.test(sp.id));
+  if (c) sp.conditional = c[1];
+  if (sp.scenario === 'rfi' && GREENLINE_OPEN_BB[sp.hero] !== undefined) sp.sizing = { raiseToBB: GREENLINE_OPEN_BB[sp.hero] };
+  return sp;
+}
+
+function chartPack(id: string, name: string, tool: string, charts: Record<string, Chart>, annotate: (sp: PreflopSpot) => PreflopSpot = (sp) => sp): StrategyPack {
   const spots: PreflopSpot[] = [];
   for (const [key, chart] of Object.entries(charts)) {
     const sp = spotFromKey(key, chart);
-    if (sp) spots.push(sp);
+    if (sp) spots.push(annotate(sp));
   }
   return {
     format: PACK_FORMAT, version: PACK_VERSION, id, name, revision: '1',
@@ -73,13 +96,13 @@ function chartPack(id: string, name: string, tool: string, charts: Record<string
 }
 
 export const BUILTIN_PACKS: StrategyPack[] = [
-  chartPack('greenline-6max-100bb', 'Greenline 6-max chart', 'Greenline Poker GreenCharts 2024-01 (PDF transcription)', greenline),
+  chartPack('greenline-6max-100bb', 'Greenline 6-max chart', 'Greenline Poker GreenCharts 2024-01 (PDF transcription)', greenline, annotateGreenline),
   chartPack('pekarstas-6max-100bb', 'Pekarstas 6-max chart', 'Pekarstas 6-max chart pack (transcription)', pekarstas),
 ];
 
 /** Library with user packs (strategy-packs imported at build time) registered before the built-in charts. */
-export function buildDefaultLibrary(): { library: StrategyLibrary; rejected: { id: string; errors: string[] }[] } {
-  const library = new StrategyLibrary();
+export function buildDefaultLibrary(precedence: Precedence = 'registration'): { library: StrategyLibrary; rejected: { id: string; errors: string[] }[] } {
+  const library = new StrategyLibrary(precedence);
   const rejected: { id: string; errors: string[] }[] = [];
   for (const p of [...USER_PACKS, ...BUILTIN_PACKS]) {
     const errors = library.register(p).filter((i) => i.level === 'error');
@@ -88,8 +111,10 @@ export function buildDefaultLibrary(): { library: StrategyLibrary; rejected: { i
   return { library, rejected };
 }
 
-let cached: StrategyLibrary | null = null;
-export function defaultLibrary(): StrategyLibrary {
-  if (!cached) cached = buildDefaultLibrary().library;
-  return cached;
+const cached = new Map<Precedence, StrategyLibrary>();
+/** The built-in library. 'registration' precedence is what versions 2 and 3 use (unchanged since 0.6.0). */
+export function defaultLibrary(precedence: Precedence = 'registration'): StrategyLibrary {
+  let lib = cached.get(precedence);
+  if (!lib) { lib = buildDefaultLibrary(precedence).library; cached.set(precedence, lib); }
+  return lib;
 }

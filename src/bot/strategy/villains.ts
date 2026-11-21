@@ -14,6 +14,7 @@ import { opponentPreflopRange } from '../ranges/preflop-model';
 import { actionLikelihood2, mixRanges, strengthTable } from '../ranges/range-model';
 import { describeRange, multiplyInto, Range, rangeTotal, removeDead } from '../ranges/range';
 import { defaultLibrary } from './library/builtin';
+import type { StrategyLibrary } from './library/library';
 
 export interface VillainModel {
   seat: number;
@@ -124,11 +125,13 @@ export function buildTable(
   cache: FeatureCache,
   /** Version 1 behaviour for the benchmark baseline: absolute strength only, no betting-lead roles, percentile preflop ranges. */
   legacy = false,
+  /** The strategy library for preflop ranges (default: the built-in library with registration precedence, as since 0.6.0). */
+  library?: StrategyLibrary,
 ): TableModel {
   const out: VillainModel[] = [];
   const hero = h.seats.find((s) => s.seat === heroSeat)!;
   const orderKey = h.street === 'preflop' ? 'preflopOrder' : 'postflopOrder';
-  const lib = legacy ? undefined : defaultLibrary();
+  const lib = legacy ? undefined : library ?? defaultLibrary();
   // Preflop ranges of everyone still in the hand, Hero included (Hero's is the range of Hero's LINE, not Hero's cards).
   const live = h.seats.filter((s) => s.dealtIn && !s.folded);
   const pre = new Map(live.map((s) => {

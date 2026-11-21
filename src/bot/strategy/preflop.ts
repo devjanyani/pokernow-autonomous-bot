@@ -34,8 +34,23 @@ import { jamFraction, JAM_BEHIND_MULT, openFraction } from '../ranges/preflop-mo
 import { bandWeight, CLASS_BY_NAME, rangeFraction, toWeighted } from '../ranges/range';
 import type { Mix as LibMix, SpotQuery, StrategyLibrary } from './library/library';
 import type { PreflopScenario as LibScenario } from './library/types';
-import { Candidate, EquitySummary } from './types';
+import { Candidate, EquitySummary, PreflopCoverage, PreflopSource } from './types';
 import { VillainModel } from './villains';
+import { classifyPreflop, describePreflopContext } from './preflop-context';
+
+/**
+ * Phase 3.1 corrections, each OFF unless set (versions 1, 2 and 3 never set them; benchmarks and the v4 work do):
+ *   consistentOpener  an opener seated earlier than any chart seat (more than 5 players behind, 7-10 handed) is NOT
+ *                     answered with the nearest seat's chart (6-max UTG, a 15.5% opening range) while the opponent
+ *                     model gives that opener its own, narrower range: the explicit percentile fallback is used,
+ *                     computed from the same opener range the opponent model uses. Applies to every lookup keyed by
+ *                     the raiser's seat (vs-open, vs-open-call, vs-3bet, vs-4bet, cold-4bet).
+ *   chartSizes        Hero's raise sizes follow the sizes the chart source states (Greenline: open 3bb UTG / MP / SB,
+ *                     2.5bb CO / BTN; isolate 4bb + 1bb per limper in position, 5bb + 1bb out of position; 3-bet
+ *                     3.6x in position, 4x out of position) instead of the fixed 2.5bb / 3x used since 0.5.
+ * Chart precedence by documented validity is chosen with the library itself (defaultLibrary('documented')).
+ */
+export interface PreflopCorrections { consistentOpener?: boolean; chartSizes?: boolean }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -47,6 +62,8 @@ export interface PreflopResult {
   equity: EquitySummary | null;
   evGap: number | null;
   evGapSe: number | null;
+  /** Which decision this was and which source decided it (Phase 3.1; measurement and explanation only). */
+  coverage: PreflopCoverage;
 }
 
 interface Mix { fold: number; call: number; raise: number; allin: number }
@@ -87,6 +104,7 @@ export function decidePreflop(
   exploitWeight: number,
   /** Strategy library (version 2). Omitted = the version 1 chart lookup, kept for the benchmark baseline. */
   library?: StrategyLibrary,
+  corrections: PreflopCorrections = {},
 ): PreflopResult {
   const la = legalActions(h, heroSeat);
   if (!la) throw new Error('decidePreflop: Hero is not to act');
@@ -99,6 +117,11 @@ export function decidePreflop(
   const hu = dealt.length === 2;
   const basis: string[] = [];
   const adjustments: string[] = [];
+  const ctx = classifyPreflop(h, heroSeat);
+  // The source that decided, recorded as the branches run (the last assignment wins).
+  let source: PreflopSource = 'heuristic';
+  const notes: string[] = [];
+  let chartQuality: 'exact' | 'approximation' | null = null;
 
   // ---- read the preflop action so far ----
   let raises = 0, limpers = 0, callersAfterRaise = 0, heroRaiseLevel = 0;
@@ -131,11 +154,25 @@ export function decidePreflop(
   const lookup = (scenario: LibScenario, villainBehind?: number, extra: Partial<SpotQuery> = {}): LibMix | null => {
     if (!library) return null;
     const q: SpotQuery = { scenario, players: dealt.length, heroBehind: hero.pos!.behindPreflop, villainBehind, effStackBB: effectiveStack(h, heroSeat) / bb, anteBB: h.ante / bb, ...extra };
+    if ((scenario === 'vs-open' || scenario === 'vs-open-call') && ctx.lastRaiser) q.sizeFacedBB = ctx.lastRaiser.toBB;
     let m = library.find(q), nearest = '';
-    // An opener seated earlier than the earliest seat any pack covers: the earliest covered seat is the nearest description.
-    if (!m && villainBehind !== undefined && villainBehind > 5) { m = library.find({ ...q, villainBehind: 5 }); nearest = '; APPROXIMATION: the raiser sits earlier than the earliest seat in the data, nearest seat used'; }
+    if (!m && villainBehind !== undefined && villainBehind > 5) {
+      if (corrections.consistentOpener) {
+        notes.push(`no data for a raiser with ${villainBehind} players behind (the earliest chart seat has 5); the nearest seat's chart is NOT used, because it assumes a wider range than the opponent model gives this raiser`);
+        return null;
+      }
+      // An opener seated earlier than the earliest seat any pack covers: the earliest covered seat is the nearest description.
+      m = library.find({ ...q, villainBehind: 5 }); nearest = '; APPROXIMATION: the raiser sits earlier than the earliest seat in the data, nearest seat used';
+    }
     if (!m) return null;
-    basis.push(`${m.basisTag}: ${library.cite(m)}${nearest}`);
+    // Situations the chart was not made for, stated instead of silently substituted.
+    const extraNotes: string[] = [];
+    if ((scenario === 'vs-open' || scenario === 'vs-open-call') && ctx.heroLimped) extraNotes.push('Hero limped first, the data assume Hero had not entered the pot');
+    else if ((scenario === 'vs-open' || scenario === 'vs-open-call') && (ctx.opener?.overLimpers ?? 0) > 0) extraNotes.push(`the raise came over ${ctx.opener!.overLimpers} limper(s), the data assume an unopened pot`);
+    if (scenario === 'vs-3bet' && ctx.callersBeforeLastRaise > 0) extraNotes.push(`${ctx.callersBeforeLastRaise} player(s) called Hero's raise before the 3-bet (a squeeze), the data assume a heads-up 3-bet`);
+    basis.push(`${m.basisTag}: ${library.cite(m)}${nearest}${extraNotes.length ? `; APPROXIMATION: ${extraNotes.join('; ')}` : ''}`);
+    chartQuality = m.quality === 'exact' && !nearest && !extraNotes.length ? 'exact' : 'approximation';
+    chartSize = m.spot.sizing?.raiseToBB ?? null;
     return library.mixFor(m, heroCards);
   };
   const cellFor = (key: string, scenario: LibScenario, villainBehind?: number, extra: Partial<SpotQuery> = {}): Mix | null => {
@@ -145,12 +182,19 @@ export function decidePreflop(
   };
 
   const mix: Mix = { fold: 0, call: 0, raise: 0, allin: 0 };
+  let chartSize: number | null = null;
   let raiseTo = la.minRaiseTo;
   let equity: EquitySummary | null = null;
   let callEv: number | null = null, callEvSe: number | null = null;
 
   const openSize = (): number => {
-    const base = hero.pos!.isSmallBlind && !hu ? 3 : hu ? 2.5 : 2.5;
+    let base = hero.pos!.isSmallBlind && !hu ? 3 : hu ? 2.5 : 2.5;
+    // Phase 3.1 (chartSizes): the size the chart source states for this seat; earlier seats than the chart covers
+    // take the earliest documented seat's size (3bb), stated as such.
+    if (corrections.chartSizes && !hu && limpers === 0 && h.currentBet <= bb) {
+      base = chartSize ?? (hero.pos!.behindPreflop > 5 ? 3 : base);
+      notes.push(`raise size ${base}bb: ${chartSize !== null ? 'as the chart source states for this seat' : hero.pos!.behindPreflop > 5 ? 'the earliest documented seat\'s size (no data for this seat)' : 'default (the source states no size)'}`);
+    }
     return h.currentBet > bb ? h.currentBet * base : (base + limpers) * bb;
   };
 
@@ -169,6 +213,7 @@ export function decidePreflop(
     const margin = (0.015 + 0.02 * behind) * winnable;
     equity = { ...est };
     if (callEv > margin) mix.call = 1; else mix.fold = 1;
+    source = 'computed';
     basis.push(`computed: all-in call by chip EV vs ${opp.length} committed range(s) (equity ${(100 * est.equity).toFixed(1)}%, needs ${(100 * toCall / Math.max(1, winnable)).toFixed(1)}% + margin)`);
     basis.push('heuristic: opponent jam ranges are stack-depth percentile bands');
   }
@@ -177,6 +222,7 @@ export function decidePreflop(
     let jam: number;
     if (behind === 1 && limpers === 0 && !hero.pos!.isBigBlind) {
       jam = isShove(cls, effBB) ? 1 : 0;
+      source = 'push-fold';
       basis.push(`precomputed-chart: heads-up push/fold Nash open-jam at ${effBB.toFixed(1)}bb (one player behind)`);
     } else if (toCall === 0) {
       jam = inTop(cls, 0.15);
@@ -207,6 +253,7 @@ export function decidePreflop(
       const scenario: PreflopScenario = raises === 0 ? 'RFI' : raises === 1 ? 'vs-open' : raises === 2 ? 'vs-3bet' : 'vs-4bet';
       const a = preflopChartAction(cls, scenario).action;
       mix[a] = 1;
+      source = 'hu-chart';
       raiseTo = raises === 0 ? 2.5 * bb : raises === 1 ? h.currentBet * 3.5 : h.currentBet * 2.4;
       basis.push(`precomputed-chart: heads-up table ${scenario} (preflop-charts.ts, ~100bb ranges)`);
     }
@@ -218,6 +265,7 @@ export function decidePreflop(
       const cell = library ? lookup('bb-vs-limp', undefined, { limpers }) : null;
       mix.raise = cell ? cell.raise + cell.allin : inTop(cls, 0.14);
       mix.call = 1 - mix.raise; raiseTo = (4 + limpers) * bb;
+      if (corrections.chartSizes) { raiseTo = (5 + limpers) * bb; notes.push(`isolation size ${5 + limpers}bb (Greenline page 5, out of position)`); }
       basis.push(cell ? 'the chart is read for its raising hands; every other hand checks its option' : 'heuristic: big blind isolates top 14% over limpers, otherwise checks');
     } else if (limpers === 0) {
       const cell = library ? cellFor('', 'rfi') : p6 ? chartCell(`${p6}-RFI`, cls) : null;
@@ -239,6 +287,11 @@ export function decidePreflop(
       const overlimp = late && playable && pct < 0.45 ? 1 - mix.raise : 0;
       mix.call = overlimp; mix.fold = 1 - mix.raise - mix.call;
       raiseTo = (hero.pos!.isSmallBlind ? 4 : 3 + limpers) * bb + (hero.pos!.isSmallBlind ? limpers * bb : 0);
+      if (corrections.chartSizes) {
+        const oop = hero.pos!.isSmallBlind || hero.pos!.isBigBlind;
+        raiseTo = ((oop ? 5 : 4) + limpers) * bb;
+        notes.push(`isolation size ${(oop ? 5 : 4) + limpers}bb (Greenline page 5: 4bb + 1bb per limper in position, 5bb + 1bb out of position)`);
+      }
       if (!cell) basis.push(`heuristic: isolate top ${(100 * f).toFixed(1)}% over ${limpers} limper(s)`);
       else if (!library) basis.push(`precomputed-chart: 6-max ${p6}-ISO over ${limpers} limper(s)`);
       else basis.push(`the isolation chart is read for its raising hands only, with ${limpers} limper(s)`);
@@ -269,6 +322,10 @@ export function decidePreflop(
       adjustments.push(`learned: ${opener!.name} ${note.text.toLowerCase()} (${note.evidence}); added light 3-bets`);
     }
     raiseTo = h.currentBet * ((ip ? 3 : 4) + callersAfterRaise);
+    if (corrections.chartSizes) {
+      raiseTo = h.currentBet * ((ip ? 3.6 : 4) + callersAfterRaise);
+      notes.push(`3-bet size ${(ip ? 3.6 : 4) + callersAfterRaise}x (Greenline pages 6-7: 2.5bb open to 9bb in position, to 10bb out of position${callersAfterRaise ? '; +1x per caller as before' : ''})`);
+    }
   } else if (raises === 2) {
     const p6 = hero.pos!.chart6, r6 = lastRaiserSeat!.pos!.chart6;
     const cell = heroRaiseLevel !== 1 ? (library ? lookup('cold-4bet', lastRaiserSeat!.pos!.behindPreflop) : null)
@@ -286,7 +343,9 @@ export function decidePreflop(
       basis.push('heuristic: vs 3-bet without a chart: 4-bet top 2.6%, call a band of the opening range when deep');
     } else {
       mix.raise = inTop(cls, 0.02); mix.fold = 1 - mix.raise;
-      basis.push('heuristic: cold 4-bet top 2% only');
+      basis.push(ctx.heroCalledRaise
+        ? 'heuristic (no data for this situation): Hero called the open and now faces a 3-bet; it is treated like a cold 4-bet spot: 4-bet top 2%, fold the rest'
+        : 'heuristic: cold 4-bet top 2% only');
     }
     raiseTo = h.currentBet * (hero.pos!.isSmallBlind || hero.pos!.isBigBlind ? 2.7 : 2.3);
   } else {
@@ -333,5 +392,8 @@ export function decidePreflop(
     if (vs.length) equity = { ...multiwayEquity(heroCards, [], vs.map((v) => toWeighted(v.range, heroCards).range), 1200, rng.int(1 << 30)) };
   }
   const gap = callEv !== null ? Math.abs(callEv) : null;
-  return { candidates, chosen, basis, adjustments, equity, evGap: gap, evGapSe: callEvSe };
+  if (chartQuality !== null && source === 'heuristic') source = chartQuality === 'exact' ? 'chart' : 'chart-approx';
+  for (const n of notes) basis.push(`phase 3.1: ${n}`);
+  const coverage: PreflopCoverage = { situation: ctx.situation, source, context: describePreflopContext(ctx), ctx };
+  return { candidates, chosen, basis, adjustments, equity, evGap: gap, evGapSe: callEvSe, coverage };
 }

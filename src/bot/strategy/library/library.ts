@@ -32,7 +32,19 @@ export interface SpotQuery {
   effStackBB: number;
   anteBB?: number;
   format?: 'cash' | 'tournament';
+  /** Size of the raise Hero faces, in big blinds (vs-open / vs-open-call): compared with the size the data assumes. */
+  sizeFacedBB?: number;
 }
+
+/**
+ * How equally good matches are ranked (Phase 3.1).
+ *   'registration'  (default, the behaviour of 0.6.0-0.9.1): exact before approximate, fewer departures, solver data,
+ *                   verified data, then the pack registered FIRST. With the two built-in 6-max packs (same kind, both
+ *                   unverified) this means Greenline wins every spot both packs have.
+ *   'documented'    as 'registration', but a spot its own source marks as opponent-conditional (PreflopSpot.conditional)
+ *                   ranks below an unconditional spot of the same quality. Registration order is only the last tie-break.
+ */
+export type Precedence = 'registration' | 'documented';
 
 export interface Mix { fold: number; call: number; raise: number; allin: number }
 
@@ -61,6 +73,8 @@ export function comboKey(a: CardId, b: CardId): string {
 export class StrategyLibrary {
   private readonly items: Indexed[] = [];
   readonly packs: StrategyPack[] = [];
+
+  constructor(readonly precedence: Precedence = 'registration') {}
 
   /** Register a pack. Returns the validation issues; a pack with errors is NOT registered. */
   register(pack: StrategyPack): PackIssue[] {
@@ -100,8 +114,13 @@ export class StrategyLibrary {
       if (q.effStackBB < lo - 1e-9 || q.effStackBB > hi + 1e-9) departures.push(`made for ${lo}-${hi}bb, effective stack is ${q.effStackBB.toFixed(0)}bb`);
       if ((a.anteBB ?? 0) > 0 !== (q.anteBB ?? 0) > 0) departures.push((q.anteBB ?? 0) > 0 ? 'made without antes, this game has antes' : 'made with antes, this game has none');
       if (q.format && q.format !== a.format) departures.push(`made for ${a.format} play`);
+      // The size faced against the size the data assumes (more than 25% apart). Same text for every pack that states
+      // the same open size, so it never changes which spot is chosen; it makes the approximation visible.
+      const assumedOpen = spot.sizing?.raiseToBB ?? (spot.scenario === 'vs-open' || spot.scenario === 'vs-open-call' ? a.openSizeBB : undefined);
+      if (q.sizeFacedBB !== undefined && assumedOpen !== undefined && Math.abs(q.sizeFacedBB / assumedOpen - 1) > 0.25) departures.push(`made for a ${assumedOpen}bb open, the raise faced is to ${q.sizeFacedBB.toFixed(1)}bb`);
       const quality = departures.length ? 'approximation' as const : 'exact' as const;
-      const score = (quality === 'exact' ? 1000 : 0) - 10 * departures.length + (pack.source.kind === 'solver' ? 5 : 0) + (pack.source.verified ? 3 : 0) - 0.001 * it.order;
+      const conditionalPenalty = this.precedence === 'documented' && spot.conditional ? 50 : 0;
+      const score = (quality === 'exact' ? 1000 : 0) - 10 * departures.length - conditionalPenalty + (pack.source.kind === 'solver' ? 5 : 0) + (pack.source.verified ? 3 : 0) - 0.001 * it.order;
       if (!best || score > best.score) best = { m: { pack, spot, quality, departures, basisTag: BASIS_TAG[pack.source.kind] }, score };
     }
     return best ? best.m : null;
@@ -129,7 +148,7 @@ export class StrategyLibrary {
   /** Short citation for the decision explanation. */
   cite(m: SpotMatch): string {
     const s = m.pack.source;
-    const src = `${m.pack.name}, ${m.spot.id}${s.verified ? '' : ' (source not verified)'}`;
+    const src = `${m.pack.name}, ${m.spot.id}${s.verified ? '' : ' (source not verified)'}${m.spot.conditional ? `; OPPONENT-CONDITIONAL in its source: ${m.spot.conditional}` : ''}`;
     return m.quality === 'exact' ? src : `${src}; APPROXIMATION: ${m.departures.join('; ')}`;
   }
 }

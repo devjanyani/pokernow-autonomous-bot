@@ -13,7 +13,8 @@
 
 import { CardId, cardsAreDistinct, hashSeed, hashString, Rng } from './cards';
 import { applyHandToProfiles, PlayerProfile } from './opponents/profile';
-import { decidePreflop } from './strategy/preflop';
+import { decidePreflop, PreflopCorrections } from './strategy/preflop';
+import type { Precedence, StrategyLibrary } from './strategy/library/library';
 import { PostflopSolver, PostflopResult } from './strategy/postflop';
 import { PostflopSolverV1 } from './strategy/postflop-v1';
 import { addCalib, Calibration, CalibKey, knobsFor } from './strategy/v3/model';
@@ -68,6 +69,12 @@ export interface AgentOptions {
   v3ArtifactStatus?: ArtifactStatus[];
   /** Diagnostics only (offline tools): called with every version 3 search and the decision made from it. */
   onV3Search?: (search: PostflopSearchV3, d: Decision) => void;
+  /**
+   * Phase 3.1, OFFLINE ONLY (benchmarks): preflop corrections (strategy/preflop.ts PreflopCorrections) and the chart
+   * precedence (library.ts Precedence) used for Hero's lookups and the opponents' preflop ranges. The extension never
+   * sets this: versions 1, 2 and 3 keep 'registration' precedence and no corrections.
+   */
+  preflopCorrections?: PreflopCorrections & { precedence?: Precedence };
 }
 
 export interface DecideOptions {
@@ -111,6 +118,8 @@ export class BotAgent {
   private readonly v3RiverRange?: RiverRangeCalibration;
   private readonly v3SpotChecks: boolean;
   private readonly v3ArtifactStatus: ArtifactStatus[];
+  private readonly corrections: PreflopCorrections;
+  private readonly library: StrategyLibrary;
   /** What the empirical corrections changed in the last version 3 search (for the explanation). */
   private v3EmpiricalNote: string[] = [];
   /** Whether each fitted table was used in the last version 3 search, and why not. */
@@ -128,6 +137,9 @@ export class BotAgent {
     this.v3RiverRange = opts.v3RiverRange;
     this.v3SpotChecks = opts.v3SpotChecks ?? false;
     this.v3ArtifactStatus = opts.v3ArtifactStatus ?? [];
+    const { precedence, ...corr } = opts.preflopCorrections ?? {};
+    this.corrections = corr;
+    this.library = defaultLibrary(precedence ?? 'registration');
     this.now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   }
 
@@ -167,7 +179,7 @@ export class BotAgent {
     const counts = tableCounts(h, heroSeat);
     const mode: Decision['mode'] = counts.headsUpTable ? 'heads-up-table' : counts.opponentsContesting <= 1 ? 'heads-up-pot' : 'multiway';
     const legacy = (h.street === 'preflop' ? this.preflopEngine : this.postflopEngine) === 'v1';
-    const { villains, heroPerceived } = buildTable(h, heroSeat, heroCards, this.profiles, this.exploitWeight, this.cache, legacy);
+    const { villains, heroPerceived } = buildTable(h, heroSeat, heroCards, this.profiles, this.exploitWeight, this.cache, legacy, this.library);
     const rng = new Rng(hashSeed(this.seed, hashString(h.handId), h.events.length, heroSeat));
     const spot = analyseSpot(h, heroSeat, heroCards);
     return { la, counts, mode, villains, heroPerceived, rng, spot, legacy };
@@ -244,11 +256,13 @@ export class BotAgent {
   }
 
   private preflop(h: HandState, heroSeat: number, heroCards: [CardId, CardId], prep: ReturnType<BotAgent['prepare']>, t0: number): Decision {
-    const r = decidePreflop(h, heroSeat, heroCards, prep.villains, this.profiles, prep.rng, this.exploitWeight, prep.legacy ? undefined : defaultLibrary());
-    return this.finish(h, heroSeat, prep, r.candidates, r.chosen, {
+    const r = decidePreflop(h, heroSeat, heroCards, prep.villains, this.profiles, prep.rng, this.exploitWeight, prep.legacy ? undefined : this.library, prep.legacy ? {} : this.corrections);
+    const d = this.finish(h, heroSeat, prep, r.candidates, r.chosen, {
       equity: r.equity, basis: r.basis, adjustments: r.adjustments, evGap: r.evGap, evGapSe: r.evGapSe,
       samples: r.equity?.samples ?? 0, provisional: false,
     }, t0);
+    d.preflop = { situation: r.coverage.situation, source: r.coverage.source, context: r.coverage.context };
+    return d;
   }
 
   /**

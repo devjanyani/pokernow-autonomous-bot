@@ -1,10 +1,33 @@
 # Project progress
 
-Last updated: 2026-11-21. Branch `autonomous-bot`. Version 0.9.1 (code); Phase 3.0 audit added (documents only).
+Last updated: 2026-11-21. Branch `autonomous-bot`. Version 0.9.2.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-21, Phase 3.0: v4 audit, research and architecture)
+## Checkpoint (2026-11-21, version 0.9.2: Phase 3.1 and timing modes)
+
+- **Phase 3.1** ([reports/PHASE_3_1_PREFLOP_COVERAGE.md](reports/PHASE_3_1_PREFLOP_COVERAGE.md), [reports/PHASE_3_1_EVALUATION_BASELINE.md](reports/PHASE_3_1_EVALUATION_BASELINE.md)):
+  - exhaustive position / action-order tests for 2–10 players (one label defect fixed);
+  - `classifyPreflop` recorded with every preflop decision, with its source;
+  - silent chart substitutions now stated;
+  - the three Phase 3.0 chart-selection defects handled as offline options (documented precedence, consistent opener
+    range, chart sizes);
+  - paired harness `sim/bot/v4-bench.ts`.
+- **Result:** the options are not shown to help (ring pooled −16.1 ± 18.3 bb/100), so they stay off. **No production
+  default changed**: v1 / v2 / v3 decide as before, and the Phase 2.5 rows reproduce bit for bit.
+- **Negative controls:** 3 of 4 detected. Limp-calling everything is level with v2 against the independent pool,
+  which therefore needs a punishing opponent before it can gate Phase 3.2.
+- **Timing modes:** Settings → Timing mode, Random (default, 4-20 s) or Instant (no intentional wait, all checks
+  kept). 0.9.1 settings are migrated; a mode change while an action is pending cancels it and decides again; the Live
+  tab shows the mode.
+- **Verified:**
+  - full suite 1,254 / 1,254 (`--maxWorkers=4 --minWorkers=1`);
+  - type-check, lint (0 errors) and build pass;
+  - Chromium, one at a time: 24/24, 32/32, 27/27, 40/40, 28/28 (stand-in table only).
+- **Final v4 seeds** pre-registered, unrun: [reports/V4_PREREGISTERED_SEEDS.md](reports/V4_PREREGISTERED_SEEDS.md).
+- **Next:** Phase 3.2 only on instruction (recommended scope: docs/bot/V4_IMPLEMENTATION_ROADMAP.md §1.2).
+
+## Previous checkpoint (2026-11-21, Phase 3.0: v4 audit, research and architecture)
 
 - **Audit and design only.** No strategy, model, setting, default or extension code changed; version stays 0.9.1. One
   measurement script added: `sim/bot/v4-baseline.ts` (coverage, widths, Hero image; never imported by `src/`).

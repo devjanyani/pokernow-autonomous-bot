@@ -1,5 +1,19 @@
 import type { ActionKind, Street, TableCounts } from '../table/engine';
 import type { SpotInfo } from './spot';
+import type { PreflopContext, PreflopSituation } from './preflop-context';
+
+/**
+ * Which source decided a preflop decision (Phase 3.1):
+ *   chart        a chart spot that matches every stated assumption
+ *   chart-approx a chart spot used outside its stated assumptions (table size, stack, size faced, nearest seat,
+ *                limpers before the raise); each departure is in the basis
+ *   hu-chart     the heads-up table charts (core/ranges/preflop-charts.ts)
+ *   push-fold    heads-up push/fold Nash
+ *   computed     chip-EV calculation (calling an all-in)
+ *   heuristic    hand-set percentile rule (no data for the situation)
+ */
+export type PreflopSource = 'chart' | 'chart-approx' | 'hu-chart' | 'push-fold' | 'computed' | 'heuristic';
+export interface PreflopCoverage { situation: PreflopSituation; source: PreflopSource; context: string; ctx: PreflopContext }
 
 /** How a number or choice was obtained. Shown in every decision explanation. */
 export type Basis =
@@ -63,6 +77,8 @@ export interface Decision {
   engine?: 'v2' | 'v3';
   /** Which engine was asked for, which one decided, and why they differ (set by BotAgent for every decision). */
   strategy?: StrategyNote;
+  /** Preflop decisions: the classified situation and the source that decided it (Phase 3.1). */
+  preflop?: { situation: PreflopSituation; source: PreflopSource; context: string };
 }
 
 export type EngineName = 'v1' | 'v2' | 'v3';

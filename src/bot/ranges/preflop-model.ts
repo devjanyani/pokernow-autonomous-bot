@@ -180,15 +180,15 @@ export function opponentPreflopRange(h: HandState, seat: number, t: Tendencies =
       scenario: line.kind === 'iso' && line.behind === 0 ? 'bb-vs-limp' as PreflopScenario : map.scenario, players, heroBehind: line.behind, villainBehind: line.facedBehind ?? undefined,
       limpers: line.limpersBefore, callers: line.callersBefore, effStackBB: seatOf(h, seat).startStack / h.bigBlind, anteBB: h.ante / h.bigBlind,
     };
-    let m: SpotMatch | null = lib.find(q);
-    // A chart made for "no caller in between" is still the nearest description when there were callers.
-    if (!m && map.scenario === 'vs-open' && line.callersBefore > 0) m = lib.find({ ...q, callers: 0 });
+    let m: SpotMatch | null = lib.find(q), note = '';
+    // A chart made for "no caller in between" is still the nearest description when there were callers (stated).
+    if (!m && map.scenario === 'vs-open' && line.callersBefore > 0) { m = lib.find({ ...q, callers: 0 }); note = `; APPROXIMATION: ${line.callersBefore} caller(s) acted before this player, the chart assumes none`; }
     if (m) {
       const w = lib.classWeights(m, map.actions);
       if (w.size > 0) {
         const base = rangeFromClasses(w);
         const range = scaleRange(base, map.knob === 'A' ? t.preflopAggression : t.looseness);
-        return { range, line, basis: m.basisTag as PreflopRangeEstimate['basis'], source: lib.cite(m) };
+        return { range, line, basis: m.basisTag as PreflopRangeEstimate['basis'], source: lib.cite(m) + note };
       }
     }
   }

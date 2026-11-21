@@ -1,5 +1,29 @@
 # Development session log
 
+2026-11-21, second part: Phase 3.1 and timing modes (0.9.2), from `c256433`.
+
+## Current state (checkpoint, v0.9.2)
+
+- **Preflop classification:** `src/bot/strategy/preflop-context.ts`. Every preflop `Decision` has
+  `preflop: {situation, source, context}`.
+- **Offline options:** `AgentOptions.preflopCorrections` (`precedence: 'documented'`, `consistentOpener`,
+  `chartSizes`). Not used by the extension; not adopted (benchmark not better).
+- **Library:** `defaultLibrary(precedence)`; Greenline spots carry `conditional` and RFI `sizing`; the size faced is
+  stated as a departure.
+- **Harness:** `npx tsx sim/bot/v4-bench.ts --suite main|ablation|negative|smoke`. Seeds 32000+ are development; final
+  41000–41999 are reserved and unrun. Results are in `reports/phase31-bench-*.{md,jsonl}`.
+- **Coverage:** `npx tsx sim/bot/v4-baseline.ts coverage [--corrected]` → `reports/phase31-coverage-{before,after}.md`.
+- **Timing:** `Settings.timingMode` ('random' default | 'instant'), migration in `records.ts` `timingFields`,
+  `ActionScheduler.replan`.
+- **Verified:** suite 1,254 / 1,254; Chromium 24 / 32 / 27 / 40 / 28; type-check, lint, build. Vitest now needs
+  `--maxWorkers=4 --minWorkers=1`.
+
+## To resume
+
+Phase 3.2 only on instruction: roadmap §1.2 (strengthen the opponent pool first; licensed or computed preflop data).
+
+---
+
 2026-11-21: Phase 3.0, v4 audit, research and architecture, from commit `bf8bf21` (v0.9.1). Documents only plus one
 measurement script; no strategy or extension code changed. The 0.9.1 log is in git history at `bf8bf21`.
 

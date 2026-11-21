@@ -45,6 +45,45 @@ Both are cheap, reversible and isolated. Whether either *wins* is unknown.
 | **Acceptance** | All existing tests pass; v2 decisions bit-identical; harness reproduces a published row (`reports/PHASE_2_5_STRATEGY_BENCHMARK.md`) within its CI; held-out pool and seed range written down and **not run**. |
 | **Dependencies** | none. |
 
+### 1.1 Status: Phase 3.1 done (2026-11-21, 0.9.2)
+
+Accounts: [reports/PHASE_3_1_PREFLOP_COVERAGE.md](../../reports/PHASE_3_1_PREFLOP_COVERAGE.md), [reports/PHASE_3_1_EVALUATION_BASELINE.md](../../reports/PHASE_3_1_EVALUATION_BASELINE.md).
+
+**Done.**
+- Exhaustive position and action-order tests for 2–10 players. One label defect fixed (duplicate "MP" at 10 dealt in
+  with a dead small blind).
+- `classifyPreflop` with 12 situations and flags, recorded with every preflop decision (`Decision.preflop`: situation
+  and source).
+- Silent chart substitutions now stated.
+- The three Phase 3.0 chart-selection defects handled as offline options:
+  - documented precedence;
+  - consistent opener range;
+  - chart-stated sizes.
+- The paired harness `sim/bot/v4-bench.ts`: 28 cells, rake post hoc, negative controls, process measures.
+- Reproducibility: Phase 2.5 rows reproduced bit for bit.
+- Final seeds pre-registered (41000–41999, unrun).
+
+**Result.** The corrections are not shown to help: ring pooled −16.1 ± 18.3 bb/100, ablations all inside their
+intervals. They stay off and no default changed.
+
+**Found.** The independent pool does not punish loose-passive preflop play: the limp-call-everything control is level
+with v2. The pool needs a punishing opponent before it can gate preflop changes.
+
+**Also in 0.9.2 (settings, not strategy).** Timing modes Instant / Random.
+
+### 1.2 Recommended scope of Phase 3.2 (revised by the 3.1 results)
+
+1. **Harness first:**
+   - add at least one opponent that punishes loose or passive preflop play (a range-aware 3-bettor / squeezer, and
+     the legacy blueprint engine heads-up via `sim/bot/legacy-seat.ts`);
+   - require the limp-call negative control to be detected before any preflop change is judged.
+2. **Data:** the preflop range source remains the blocker. Phase 3.2 needs either a licensed solver export the user
+   supplies (6- and 9-handed cash at several depths and open sizes) or a project-run two-player subgame solve,
+   labelled "computed approximation". No invented ranges.
+3. **Only then:** size-keyed defence ranges and depth buckets, judged on the strengthened pool with the paired
+   harness, with seeds outside 41000–41999.
+4. **Out of scope until then:** EV preflop (3.3), bluffing calibration (3.4).
+
 ## 2. Phase 3.2: validated preflop range data and mixed-frequency actions
 
 | Item | Content |

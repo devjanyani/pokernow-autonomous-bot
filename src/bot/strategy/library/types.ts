@@ -89,6 +89,12 @@ export interface PreflopSpot {
   stackBB?: [number, number];
   /** Raise size the frequencies assume: an absolute size in big blinds or a multiple of the bet faced. */
   sizing?: { raiseToBB?: number; raiseMult?: number };
+  /**
+   * Set when the source itself says this spot's frequencies depend on the opponent type (for example "3-bet vs weak
+   * opponents who fold to 3-bets", "call a 4-bet from passive opponents") and the transcription merged those
+   * conditions into one action. Such a spot is opponent-conditional advice, not a baseline. The text says why.
+   */
+  conditional?: string;
   /** Keys are hand classes ("AKs", "77", "T9o") or exact combos ("AhKh"). Absent hands fold. */
   hands: Record<string, HandMix>;
   notes?: string;

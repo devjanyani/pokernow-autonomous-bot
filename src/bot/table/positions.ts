@@ -10,7 +10,7 @@
 // ============================================================
 
 export type PositionLabel =
-  | 'BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'LJ' | 'HJ' | 'CO';
+  | 'BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'UTG+2' | 'UTG+3' | 'MP' | 'LJ' | 'HJ' | 'CO';
 
 export type Chart6Position = 'UTG' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB';
 
@@ -40,7 +40,9 @@ const EARLY_LABELS: Record<number, PositionLabel[]> = {
   5: ['UTG', 'UTG+1', 'MP', 'HJ', 'CO'],
   6: ['UTG', 'UTG+1', 'MP', 'LJ', 'HJ', 'CO'],
   7: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'LJ', 'HJ', 'CO'],
-  8: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'MP', 'LJ', 'HJ', 'CO'], // ten dealt in with a dead small blind
+  // Ten dealt in with a dead small blind: eight seats between the big blind and the button. Until 0.9.2 this listed
+  // 'MP' twice, so two players shared a label (display and profile groups only; decisions use behindPreflop).
+  8: ['UTG', 'UTG+1', 'UTG+2', 'UTG+3', 'MP', 'LJ', 'HJ', 'CO'],
 };
 
 function chart6For(isBtn: boolean, isSb: boolean, isBb: boolean, behind: number): Chart6Position | null {
