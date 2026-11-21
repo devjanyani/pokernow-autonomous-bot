@@ -1,5 +1,33 @@
 # Development session log
 
+2026-11-21: Phase 3.0, v4 audit, research and architecture, from commit `bf8bf21` (v0.9.1). Documents only plus one
+measurement script; no strategy or extension code changed. The 0.9.1 log is in git history at `bf8bf21`.
+
+## Current state (checkpoint, Phase 3.0)
+
+- **Deliverables:** `docs/bot/V4_PREFLOP_ARCHITECTURE_AUDIT.md`, `docs/bot/V4_HERO_IMAGE_AND_EXPLOITATION.md`,
+  `docs/bot/V4_IMPLEMENTATION_ROADMAP.md`, `reports/V4_BASELINE_AND_GAPS.md`; raw measurements in
+  `reports/v4-*-2026-11-21.md`.
+- **Measurement tool:** `sim/bot/v4-baseline.ts` (`coverage` 8 s, `widths` 35 s, `hero --hands 3000` 3 min,
+  `hero --v3 --hu-only --hands 3000` 2.5 min; one process at a time, no memory problems). Audit seeds 31000-31002.
+- **Main findings:** see the checkpoint in PROJECT_PROGRESS.md and the ranked list in reports/V4_BASELINE_AND_GAPS.md §5.
+- **Checks run:** `npm run typecheck:tools` passes; `npx eslint sim/bot/v4-baseline.ts` 0 errors (29 `no-console`
+  warnings, as in the other tools); `npx vitest run tests/bot/engine.test.ts tests/bot/library.test.ts --maxWorkers=4
+  --minWorkers=1` 56 / 56 (positions and library; a two-file run needs `--minWorkers=1`, otherwise vitest rejects the
+  thread options). The full suite was not rerun: no file under `src/` changed since the verified 1,211 / 1,211 run of
+  0.9.1.
+
+## To resume
+
+Phase 3.1 (coverage + evaluation harness) only on instruction: docs/bot/V4_IMPLEMENTATION_ROADMAP.md §1.
+
+## Rules kept
+
+No strategy algorithm, model, default or setting changed; v2 default; v3 experimental; no retraining or large
+benchmark; nothing uploaded; no claim that v4 will be stronger.
+
+---
+
 2026-11-19, second part: authorised execution for experimental version 3 and action scheduling (0.9.1), from commit
 `00c7157` (v0.9.0). The v0.9.0 log is in git history at `00c7157`.
 

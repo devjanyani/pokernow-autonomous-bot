@@ -129,6 +129,7 @@ npm test                     # everything, including the original repository's s
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, data flow, Manifest V3 lifecycle, security.
 - [STRATEGY.md](STRATEGY.md): the mathematics, how heads-up and multiway are chosen, and where every piece of strategic knowledge comes from.
 - [AUTHORISED_EXECUTION.md](AUTHORISED_EXECUTION.md): when the extension clicks, the version 3 execution permission, how delays are drawn, deadlines, cancellation and stale-action protection.
+- v4 planning (Phase 3.0 audit, nothing implemented): [V4_PREFLOP_ARCHITECTURE_AUDIT.md](V4_PREFLOP_ARCHITECTURE_AUDIT.md) (positions, preflop coverage and mathematics, proposed architecture), [V4_HERO_IMAGE_AND_EXPLOITATION.md](V4_HERO_IMAGE_AND_EXPLOITATION.md) (opponent model, Hero image, bluffing), [V4_IMPLEMENTATION_ROADMAP.md](V4_IMPLEMENTATION_ROADMAP.md) (phases and gates), [../../reports/V4_BASELINE_AND_GAPS.md](../../reports/V4_BASELINE_AND_GAPS.md) (measurements, ranked weaknesses).
 - [V3_IN_THE_EXTENSION.md](V3_IN_THE_EXTENSION.md): the experimental version 3 option: wiring, fallbacks, the fitted tables it uses and their checks, recommendation-only enforcement, shadow comparison.
 - [STRATEGY_AUDIT.md](STRATEGY_AUDIT.md): the audit of the strategy engine against recorded hands, the confirmed defects and what replaced them.
 - [STRATEGY_LIBRARY.md](STRATEGY_LIBRARY.md): strategy packs, import formats, and the strategy data that is missing.

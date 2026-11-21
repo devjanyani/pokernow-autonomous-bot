@@ -1,10 +1,28 @@
 # Project progress
 
-Last updated: 2026-11-19. Branch `autonomous-bot`. Version 0.9.1.
+Last updated: 2026-11-21. Branch `autonomous-bot`. Version 0.9.1 (code); Phase 3.0 audit added (documents only).
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-19, version 0.9.1)
+## Checkpoint (2026-11-21, Phase 3.0: v4 audit, research and architecture)
+
+- **Audit and design only.** No strategy, model, setting, default or extension code changed; version stays 0.9.1. One
+  measurement script added: `sim/bot/v4-baseline.ts` (coverage, widths, Hero image; never imported by `src/`).
+- Documents: [V4_PREFLOP_ARCHITECTURE_AUDIT](docs/bot/V4_PREFLOP_ARCHITECTURE_AUDIT.md), [V4_HERO_IMAGE_AND_EXPLOITATION](docs/bot/V4_HERO_IMAGE_AND_EXPLOITATION.md),
+  [V4_IMPLEMENTATION_ROADMAP](docs/bot/V4_IMPLEMENTATION_ROADMAP.md), [reports/V4_BASELINE_AND_GAPS.md](reports/V4_BASELINE_AND_GAPS.md); raw output
+  `reports/v4-preflop-coverage-2026-11-21.md`, `reports/v4-preflop-widths-2026-11-21.md`, `reports/v4-hero-baseline-2026-11-21.md`.
+- Measured: only 6-handed 100bb preflop is covered by chart data as stated; at 9-10 handed 44-49% of spots are
+  heuristic, and Hero defends against early opens with the 6-max UTG chart while modelling the opener at 11%. Widths
+  are identical at 25bb and 100bb; the size faced is ignored; Greenline's partly exploitative 3-bet-or-fold cells win
+  over Pekarstas by registration order. Preflop EV exists only for all-in calls.
+- Hero image: v2 is 27/24 with a 15% 3-bet at 6 players, 17/14 at 9: classified TAG by fixed thresholds, not shown
+  too tight. v2 river play is passive (5-15% of river bets are bluffs; marginal hands fold 83-90% to river bets);
+  v3 the opposite heads-up (24% check-raise, 41% river bluffs). Profitability of either direction not measured.
+- Proposed order: 3.1 coverage + evaluation harness, 3.2 validated preflop data, 3.3 EV preflop, 3.4 bluffing
+  calibration, 3.5 response model + Hero image, 3.6 limited three-way search, 3.7 pre-registered held-out evaluation.
+  **Waiting for instruction before Phase 3.1.** Audit seeds 31000-31002 are spent for evaluation purposes.
+
+## Previous checkpoint (2026-11-19, version 0.9.1)
 
 - Authorised execution for experimental version 3 and scheduled action timing, for organiser-authorised play-money
   bot games only ([AUTHORISED_EXECUTION.md](docs/bot/AUTHORISED_EXECUTION.md)). Version 2 stays the default; version 3
