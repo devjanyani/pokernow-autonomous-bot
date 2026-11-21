@@ -1,10 +1,11 @@
 // ============================================================
-// Action scheduling for authorised autonomous play (0.9.1).
+// Action scheduling for authorised autonomous play (0.9.1; two timing modes since 0.9.2).
 //
-// One plan per decision opportunity (hand, street, state version). The delay is drawn ONCE, when Hero's turn is
-// first confirmed, before any recommendation exists, so it cannot depend on the action. It is uniform between the
-// configured minimum and maximum (or the minimum when randomisation is off): a plain bounded range, not a model
-// of human timing. Model computation runs inside the delay: the click is due at
+// One plan per decision opportunity (hand, street, state version). Mode 'random': the delay is drawn ONCE, when
+// Hero's turn is first confirmed, before any recommendation exists, so it cannot depend on the action. It is uniform
+// between the configured minimum and maximum: a plain bounded range, not a model of human timing. Mode 'instant':
+// the delay is 0, so the action is due as soon as the recommendation is ready (it still passes every check the
+// controller and the executor make). Model computation runs inside the delay: the click is due at
 //
 //     start + delay, but never later than deadline − safety margin.
 //
@@ -18,8 +19,8 @@
 // ============================================================
 
 export interface TimingPolicy {
-  /** false: always wait the minimum. */
-  randomDelay: boolean;
+  /** 'instant': no intentional waiting; 'random': uniform in [minDelayMs, maxDelayMs]. */
+  mode: 'instant' | 'random';
   minDelayMs: number;
   maxDelayMs: number;
   /** Act no later than this long before the deadline. */
@@ -46,6 +47,8 @@ export interface ActionPlan {
   conflict: string | null;
   /** The drawn delay was shortened by the deadline (but the minimum is met). */
   capped: string | null;
+  /** Created while Hero's turn was already running (page opened or reloaded mid-turn). */
+  joinedMidTurn: boolean;
 }
 
 export interface PendingAction {
@@ -64,9 +67,13 @@ export interface ScheduleEvent { key: string; label: string | null; reason: stri
 
 const s1 = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
-/** The delay for one opportunity: uniform in [min, max], or the minimum when randomisation is off. */
+/** The smallest delay the mode asks for: 0 when instant. */
+export const minimumOf = (p: TimingPolicy): number => (p.mode === 'instant' ? 0 : p.minDelayMs);
+
+/** The delay for one opportunity: 0 when instant; uniform in [min, max] when random (the minimum if max <= min). */
 export function drawDelay(p: TimingPolicy, random: () => number): number {
-  if (!p.randomDelay || p.maxDelayMs <= p.minDelayMs) return p.minDelayMs;
+  if (p.mode === 'instant') return 0;
+  if (p.maxDelayMs <= p.minDelayMs) return p.minDelayMs;
   return p.minDelayMs + random() * (p.maxDelayMs - p.minDelayMs);
 }
 
@@ -75,7 +82,9 @@ export function place(plan: ActionPlan, p: TimingPolicy): ActionPlan {
   const latestSafeAt = plan.deadlineAt - p.deadlineMarginMs;
   const available = latestSafeAt - plan.startedAt;
   let dueAt = plan.startedAt + plan.targetDelayMs, conflict: string | null = null, capped: string | null = null;
-  if (available < p.minDelayMs) {
+  // Instant: due at once (in practice when the recommendation is ready); no minimum to meet, nothing to shorten.
+  if (p.mode === 'instant') return Object.assign(plan, { latestSafeAt, dueAt: plan.startedAt, conflict, capped });
+  if (p.mode === 'random' && available < p.minDelayMs) {
     conflict = `the ${plan.deadlineSource} deadline leaves ${s1(Math.max(0, available))} before the ${s1(p.deadlineMarginMs)} safety margin, less than the ${s1(p.minDelayMs)} minimum: acting at the latest safe moment instead`;
     dueAt = Math.max(plan.startedAt, latestSafeAt);
   } else if (dueAt > latestSafeAt) {
@@ -105,9 +114,9 @@ export class ActionScheduler {
       let target = drawDelay(p, this.random);
       // Opened (or reloaded) during Hero's turn with no clock shown: when the turn began is unknown, so the
       // assumed clock may already be partly used. Wait only the minimum.
-      if (joinedMidTurn && !observed) target = p.minDelayMs;
+      if (joinedMidTurn && !observed) target = minimumOf(p);
       plan = {
-        key, startedAt, targetDelayMs: target,
+        key, startedAt, targetDelayMs: target, joinedMidTurn,
         deadlineAt: observed ? deadline.at! : startedAt + p.assumedClockMs,
         deadlineSource: observed ? 'observed' : joinedMidTurn ? 'assumed, joined mid-turn' : 'assumed',
         latestSafeAt: 0, dueAt: 0, conflict: null, capped: null,
@@ -122,6 +131,18 @@ export class ActionScheduler {
   }
 
   get(key: string): ActionPlan | undefined { return this.plans.get(key); }
+
+  /**
+   * The timing settings changed (for example Random -> Instant while an action is pending): every known plan keeps
+   * its start and deadline, its delay is drawn again under the new policy, and it is placed again. The caller cancels
+   * the pending action first and decides the opportunity again, so the new plan governs the next click.
+   */
+  replan(p: TimingPolicy): void {
+    for (const plan of this.plans.values()) {
+      plan.targetDelayMs = plan.joinedMidTurn && plan.deadlineSource !== 'observed' ? minimumOf(p) : drawDelay(p, this.random);
+      place(plan, p);
+    }
+  }
 
   /** A recommendation is ready and will be executed when due. Replaces nothing: one pending action at a time. */
   arm(a: Omit<PendingAction, 'state' | 'plannedWaitMs'>): PendingAction | null {

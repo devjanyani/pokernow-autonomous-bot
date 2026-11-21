@@ -14,6 +14,9 @@
 //   E  emergency stop during a pending action: cancelled at once, nothing clicked
 //   F  authorisation revoked during a pending action: cancelled at once, nothing clicked
 //   G  5 s clock (shorter than the 4 s minimum plus the 3 s margin): acts before the clock runs out, conflict shown
+//   I  timing modes (0.9.2): Random -> Instant chosen in Settings while an action is pending (cancelled, decided
+//      again, executed once without waiting); Instant acts within computation + reading time with no timeouts; the
+//      Live tab shows the mode; recommend mode with Instant never clicks
 //   H  the timing settings persist (changed in Settings, read back after reloading the dashboard)
 // Writes reports/e2e-exec-<date>.md.
 // ============================================================
@@ -33,7 +36,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Turn = { start: number; end: number | null; how: string | null };
 type Stats = { hands: number; heroActions: number; autoActions: number; timeouts: number; illegalClicks: number; errors: string[]; heroTurns: Turn[] };
 type Sched = {
-  policy: { minDelayMs: number; maxDelayMs: number; deadlineMarginMs: number; randomDelay: boolean };
+  policy: { minDelayMs: number; maxDelayMs: number; deadlineMarginMs: number; timingMode: 'instant' | 'random' };
   pending: null | { label: string; decidedBy: string; fallback: string | null; remainingMs: number; targetDelayMs: number; deadlineSource: string; conflict: string | null };
   lastCancel: null | { label: string | null; reason: string; agoMs: number };
   lastExecuted: null | { label: string; reason: string; delayMs: number; computeMs: number; waitedMs: number; conflict: string | null; agoMs: number };
@@ -78,8 +81,9 @@ async function main(): Promise<void> {
     await openTab('settings');
     await dash.waitForSelector('#set-timing', { timeout: 10000 });
     const val = async (id: string) => dash.locator(id).inputValue();
-    check('Settings has the authorised-play timing section with the defaults 4 s / 20 s / 3 s, randomised on',
-      (await val('#set-minDelayMs')) === '4' && (await val('#set-maxDelayMs')) === '20' && (await val('#set-deadlineMarginMs')) === '3' && (await dash.locator('#set-randomDelay').isChecked()),
+    check('Settings has the authorised-play timing section with the defaults: Random, 4 s / 20 s, 3 s margin',
+      (await val('#set-minDelayMs')) === '4' && (await val('#set-maxDelayMs')) === '20' && (await val('#set-deadlineMarginMs')) === '3' && (await val('#set-timingMode')) === 'random'
+        && (await dash.locator('#set-timingMode option').count()) === 2,
       `min ${await val('#set-minDelayMs')}, max ${await val('#set-maxDelayMs')}, margin ${await val('#set-deadlineMarginMs')}`);
     check('v2 is the default and the v3 execution permission is not offered while v2 is selected', (await val('#set-strategyEngine')) === 'v2' && (await dash.locator('#set-v3ExecutionOptIn').count()) === 0);
 
@@ -188,6 +192,46 @@ async function main(): Promise<void> {
     check('5 s clock: acts before the clock runs out (the 4 s minimum is not met), no timeouts', short.length >= 2 && short.every((d) => d < 4000) && s1.timeouts === s0.timeouts, `${short.length} actions after ${short.map((d) => (d / 1000).toFixed(1)).join(', ')} s; ${s1.timeouts - s0.timeouts} timeouts`);
     check('5 s clock: the conflict is shown on the dashboard', conflictShown);
 
+    // ---- I: timing modes ----
+    await table.goto(url('clock=30'));
+    await openTab('live');
+    p = await waitPending(3000);
+    before = await stats();
+    await openTab('settings');
+    await dash.selectOption('#set-timingMode', 'instant');
+    const switchedAt = Date.now();
+    await sleep(400);
+    l = await live();
+    const cancelReason = l?.schedule?.lastCancel?.reason ?? '';
+    let afterSwitch = await stats();
+    for (let i = 0; i < 40 && afterSwitch.heroActions === before.heroActions; i++) { await sleep(100); afterSwitch = await stats(); }
+    const switchClickMs = Date.now() - switchedAt;
+    check('Random -> Instant chosen in Settings while an action is pending: cancelled with the reason, then executed without waiting',
+      !!p && cancelReason === 'timing mode changed to instant' && (await stored())?.timingMode === 'instant' && afterSwitch.heroActions === before.heroActions + 1 && switchClickMs < 4000,
+      `pending ${p?.schedule?.pending?.label} with ${((p?.schedule?.pending?.remainingMs ?? 0) / 1000).toFixed(1)} s left; cancelled: ${cancelReason}; clicked ${(switchClickMs / 1000).toFixed(1)} s after the switch`);
+    await openTab('live');
+    s0 = await stats();
+    let instantShown = false;
+    for (let i = 0; i < 90 * 4; i++) {
+      await sleep(250);
+      if (!instantShown) instantShown = /Timing mode\s*Instant/.test(await dash.locator('#schedule').innerText().catch(() => '')) && /timing: Instant/.test(await dash.innerText('body').catch(() => ''));
+    }
+    s1 = await stats();
+    const inst = s1.heroTurns.slice(s0.heroTurns.length).filter((t) => t.end !== null);
+    const instClicked = inst.filter((t) => t.how?.startsWith('click')).map((t) => t.end! - t.start);
+    l = await live();
+    check('Instant: every Hero turn acted on within computation and reading time (under 3.5 s), no timeouts',
+      instClicked.length >= 6 && instClicked.every((d) => d < 3500) && s1.timeouts === s0.timeouts && instClicked.length === inst.filter((t) => t.how !== 'moved on').length,
+      `${instClicked.length} actions after ${instClicked.map((d) => (d / 1000).toFixed(1)).join(', ')} s; ${s1.timeouts - s0.timeouts} timeouts`);
+    check('Instant: the extension recorded no intentional wait', (l?.schedule?.lastExecuted?.waitedMs ?? 99) <= 300 && l?.schedule?.policy.timingMode === 'instant', `last executed: computation ${(l?.schedule?.lastExecuted?.computeMs ?? 0).toFixed(0)} ms, waiting ${(l?.schedule?.lastExecuted?.waitedMs ?? 0).toFixed(0)} ms`);
+    check('the Live tab shows the active timing mode and the execution status', instantShown);
+    await setSettings({ mode: 'recommend' });
+    await sleep(500);
+    s0 = await stats();
+    await sleep(20000);
+    s1 = await stats();
+    check('recommend mode with Instant selected: nothing clicked', s1.heroActions === s0.heroActions, `${s1.heroActions - s0.heroActions} clicks in 20 s, ${s1.hands - s0.hands} hands`);
+
     // ---- H: timing settings persist ----
     await openTab('settings');
     await dash.fill('#set-minDelayMs', '5');
@@ -196,7 +240,7 @@ async function main(): Promise<void> {
     await dash.reload();
     await openTab('settings');
     await dash.waitForSelector('#set-minDelayMs');
-    check('timing settings persist (5 s stored and shown after reloading)', (await stored())?.minDelayMs === 5000 && (await val('#set-minDelayMs')) === '5');
+    check('timing settings persist (Instant and the 5 s minimum stored and shown after reloading)', (await stored())?.minDelayMs === 5000 && (await val('#set-minDelayMs')) === '5' && (await val('#set-timingMode')) === 'instant');
     check('no uncaught errors in the table page or dashboard', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
     version = ctx.browser()?.version() ?? 'unknown';
   } finally {

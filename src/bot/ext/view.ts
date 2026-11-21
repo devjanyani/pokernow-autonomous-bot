@@ -207,12 +207,19 @@ export function strategyTag(l: LiveState | null): { text: string; tone: Tone; de
 
 const sec = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
+/** The timing mode in a few words ("Instant", "Random 4.0 s–20.0 s"). States written by 0.9.1 had `randomDelay`. */
+export function timingModeText(p: { timingMode?: string; randomDelay?: boolean; minDelayMs: number; maxDelayMs: number }): string {
+  const mode = p.timingMode ?? (p.randomDelay === false && p.minDelayMs === 0 ? 'instant' : 'random');
+  return mode === 'instant' ? 'Instant' : `Random ${sec(p.minDelayMs)}–${sec(p.maxDelayMs)}`;
+}
+
 /** Whether execution is enabled on this table, in one line. */
 export function executionLine(l: LiveState | null): { text: string; tone: Tone } | null {
   if (!l || !l.execution) return null;
   const v3 = l.strategy?.selected === 'v3';
+  const mode = l.schedule ? ` · timing: ${timingModeText(l.schedule.policy)}` : '';
   return l.execution.enabled
-    ? { text: `Execution enabled${v3 ? ' (version 3, experimental)' : ''}`, tone: 'warn' }
+    ? { text: `Execution enabled${v3 ? ' (version 3, experimental)' : ''}${mode}`, tone: 'warn' }
     : { text: `Execution off: ${l.execution.reason}`, tone: 'muted' };
 }
 
@@ -226,7 +233,8 @@ export function scheduleRows(l: LiveState | null): [string, string][] {
   const p = sc.policy;
   const rows: [string, string][] = [
     ['Execution', executionLine(l)?.text ?? '–'],
-    ['Timing policy', `${p.randomDelay ? `random ${sec(p.minDelayMs)}–${sec(p.maxDelayMs)}` : `fixed ${sec(p.minDelayMs)}`} per decision, same for every action · act ≥ ${sec(p.deadlineMarginMs)} before the deadline · no clock shown: assume ${sec(p.assumedClockMs)}`],
+    ['Timing mode', timingModeText(p)],
+    ['Timing policy', `${p.timingMode === 'instant' ? 'no intentional waiting: acts as soon as the recommendation is ready and has passed every check' : `random ${sec(p.minDelayMs)}–${sec(p.maxDelayMs)} per decision, same for every action`} · act ≥ ${sec(p.deadlineMarginMs)} before the deadline · no clock shown: assume ${sec(p.assumedClockMs)}`],
   ];
   const q = sc.pending;
   if (q) {

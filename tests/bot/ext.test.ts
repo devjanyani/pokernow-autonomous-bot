@@ -33,7 +33,7 @@ describe('settings and message validation', () => {
   });
   it('sanitises stored settings', () => {
     const s = sanitizeSettings({ mode: 'yolo', estop: 'yes', exploitWeight: 9, minDelayMs: -5, maxDelayMs: 1, deadlineMarginMs: 99999, randomDelay: 'no', authorizedTables: ['ok-1', '<script>', 7], selectorOverrides: { foldBtn: 'button.f', 'bad key': 'x', n: 5 }, junk: 1 });
-    expect(s).toMatchObject({ mode: 'recommend', estop: false, exploitWeight: 1, minDelayMs: 0, maxDelayMs: 1, deadlineMarginMs: 10000, randomDelay: true, v3ExecutionOptIn: false, authorizedTables: ['ok-1'], selectorOverrides: { foldBtn: 'button.f' } });
+    expect(s).toMatchObject({ mode: 'recommend', estop: false, exploitWeight: 1, minDelayMs: 0, maxDelayMs: 1, deadlineMarginMs: 10000, timingMode: 'random', v3ExecutionOptIn: false, authorizedTables: ['ok-1'], selectorOverrides: { foldBtn: 'button.f' } });
     expect(sanitizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect('junk' in s).toBe(false);
   });

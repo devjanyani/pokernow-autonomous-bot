@@ -17,7 +17,7 @@ import { Policy } from '../../src/bot/sim/table';
 import { applyAction, awaitingBoard, completeHand, createHand, dealBoard, HandState, legalActions, totalChips } from '../../src/bot/table/engine';
 import { render } from './render';
 
-const POLICY: TimingPolicy = { randomDelay: true, minDelayMs: 4000, maxDelayMs: 20000, deadlineMarginMs: 3000, assumedClockMs: 20000 };
+const POLICY: TimingPolicy = { mode: 'random', minDelayMs: 4000, maxDelayMs: 20000, deadlineMarginMs: 3000, assumedClockMs: 20000 };
 
 describe('ActionScheduler timing rules (pure, injected clock and random source)', () => {
   it('draws one delay per opportunity, uniform within the bounds, and never redraws it for repeated reads', () => {
@@ -43,7 +43,8 @@ describe('ActionScheduler timing rules (pure, injected clock and random source)'
       expect(n).toBeLessThan(140);
     }
     // Randomisation off: always the minimum.
-    expect(drawDelay({ ...POLICY, randomDelay: false }, () => 0.99)).toBe(4000);
+    expect(drawDelay({ ...POLICY, maxDelayMs: 4000 }, () => 0.99)).toBe(4000);
+    expect(drawDelay({ ...POLICY, mode: 'instant' }, () => 0.99)).toBe(0);
   }, 60000);
 
   it('a deadline shorter than the minimum: the minimum is not met, the action is due at the latest safe moment, the conflict is stated', () => {
@@ -473,3 +474,126 @@ async function toHeadsUpFlopNoClick(r: Rig) {
   await r.advance(30000);
   expect(r.live().decision?.strategy?.used ?? r.decisions().at(-1)?.decision.strategy?.used).toBe('v3');
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// 0.9.2: two mutually exclusive timing modes, Instant and Random.
+
+describe('timing modes: Instant and Random (0.9.2)', () => {
+  it('settings: Random is the default; 0.9.1 settings are migrated without losing the user choice', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ timingMode: 'random', minDelayMs: 4000, maxDelayMs: 20000 });
+    expect(sanitizeSettings({})).toMatchObject({ timingMode: 'random', minDelayMs: 4000, maxDelayMs: 20000 });
+    // 0.9.1 with the randomised delay on (its default): Random with the stored bounds.
+    expect(sanitizeSettings({ randomDelay: true, minDelayMs: 5000, maxDelayMs: 9000 })).toMatchObject({ timingMode: 'random', minDelayMs: 5000, maxDelayMs: 9000 });
+    // 0.9.1 with randomisation off and a 0 s minimum was "no waiting": Instant.
+    expect(sanitizeSettings({ randomDelay: false, minDelayMs: 0, maxDelayMs: 20000 })).toMatchObject({ timingMode: 'instant', minDelayMs: 4000, maxDelayMs: 20000 });
+    // 0.9.1 with randomisation off and a positive minimum was a fixed delay: kept as Random min = max.
+    expect(sanitizeSettings({ randomDelay: false, minDelayMs: 6000, maxDelayMs: 20000 })).toMatchObject({ timingMode: 'random', minDelayMs: 6000, maxDelayMs: 6000 });
+    // An explicit mode wins over the old field; anything else reads as the default.
+    expect(sanitizeSettings({ timingMode: 'instant', randomDelay: true }).timingMode).toBe('instant');
+    expect(sanitizeSettings({ timingMode: 'fast' }).timingMode).toBe('random');
+    expect('randomDelay' in sanitizeSettings({ randomDelay: false })).toBe(false);
+    // Round trip (what storage writes is what it reads back).
+    const s = sanitizeSettings({ timingMode: 'instant', minDelayMs: 7000, maxDelayMs: 8000 });
+    expect(sanitizeSettings(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+
+  it('scheduler: Instant draws no delay and never reports a minimum conflict; replan() keeps start and deadline', () => {
+    const instant: TimingPolicy = { ...POLICY, mode: 'instant' };
+    const s = new ActionScheduler(() => 1000, () => 0.9);
+    const p = s.plan('k', 1000, { at: 3500, observed: true }, instant, false); // 2.5 s clock: less than the 3 s margin
+    expect(p).toMatchObject({ targetDelayMs: 0, dueAt: 1000, conflict: null });
+    const q = s.plan('k2', 1000, { at: null, observed: false }, instant, true); // joined mid-turn
+    expect(q.targetDelayMs).toBe(0);
+    const r = s.plan('k3', 1000, { at: 3500, observed: true }, POLICY, false);
+    expect(r.conflict).toMatch(/less than the 4.0 s minimum/);
+    s.replan(POLICY);
+    expect(s.get('k')).toMatchObject({ startedAt: 1000, deadlineAt: 3500 });
+    expect(s.get('k')!.conflict).toMatch(/minimum/);
+    s.replan(instant);
+    expect(s.get('k3')).toMatchObject({ targetDelayMs: 0, dueAt: 1000, conflict: null });
+  });
+
+  it('Instant with version 2: the action is executed as soon as it is computed and checked, with no intentional wait', async () => {
+    const r = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, timingMode: 'instant' }), 21);
+    r.clockMs = 30000;
+    r.deal('inst');
+    await r.advance(50);
+    const start = r.t;
+    await r.advance(2000);
+    expect(r.clicks.length).toBe(1);
+    expect(r.clicks[0].at - start).toBeLessThan(600);
+    const tm = r.decisions().find((d) => d.execution)!.execution!.timing!;
+    expect(tm.targetDelayMs).toBe(0);
+    expect(tm.waitedMs).toBeLessThanOrEqual(60);
+    expect(tm.conflict).toBeNull();
+    expect(r.live().schedule!.policy.timingMode).toBe('instant');
+    expect(scheduleRows(r.live()).find(([k]) => k === 'Timing mode')![1]).toBe('Instant');
+  }, 60000);
+
+  it('Instant with version 3 (permission on): v3 acts heads-up after the flop without waiting; without the permission it never clicks', async () => {
+    const r = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, timingMode: 'instant', strategyEngine: 'v3', v3ExecutionOptIn: true }), 22);
+    await toHeadsUpFlop(r);
+    await r.advance(3000);
+    expect(r.clicks.length).toBe(2);
+    const last = r.decisions().filter((d) => d.execution).at(-1)!;
+    expect(last.decision.strategy).toMatchObject({ used: 'v3' });
+    expect(last.execution!.timing!.targetDelayMs).toBe(0);
+    expect(last.execution!.timing!.actualDelayMs).toBeLessThan(2000);
+    expect(last.execution!.timing!.waitedMs).toBeLessThanOrEqual(60);
+    const off = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, timingMode: 'instant', strategyEngine: 'v3' }), 23);
+    await toHeadsUpFlopNoClick(off);
+    expect(off.clicks).toEqual([]);
+  }, 60000);
+
+  it('recommendation-only (and manual) never click, whatever the timing mode', async () => {
+    for (const mode of ['recommend', 'manual'] as const) {
+      for (const timingMode of ['instant', 'random'] as const) {
+        const r = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, mode, timingMode }), 24);
+        r.deal('ro');
+        await r.advance(25000);
+        expect(r.clicks).toEqual([]);
+        expect(r.controller.scheduler.pending).toBeNull();
+      }
+    }
+  }, 60000);
+
+  it('switching Random -> Instant while an action is pending: cancelled with the reason, decided again, executed once without waiting', async () => {
+    const r = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH }), 25);
+    r.clockMs = 30000;
+    r.deal('switch');
+    await r.advance(50);
+    await r.untilPending();
+    expect(r.plan()!.targetDelayMs).toBeGreaterThanOrEqual(4000);
+    const at = r.t;
+    r.set({ timingMode: 'instant' });
+    expect(r.controller.scheduler.pending).toBeNull();
+    expect(r.controller.scheduler.lastCancel).toMatchObject({ at, reason: 'timing mode changed to instant' });
+    await r.advance(25000);
+    expect(r.clicks.length).toBe(1);
+    expect(r.clicks[0].at - at).toBeLessThan(600);
+  }, 60000);
+
+  it('changing the Random bounds while pending, and Instant -> Random: the new bounds govern; one click each', async () => {
+    const r = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, minDelayMs: 10000, maxDelayMs: 12000 }), 26);
+    r.clockMs = 30000;
+    r.deal('bounds');
+    await r.advance(50);
+    const start = r.t;
+    await r.untilPending();
+    r.set({ minDelayMs: 5000, maxDelayMs: 6000 });
+    expect(r.controller.scheduler.lastCancel!.reason).toBe('settings changed');
+    await r.advance(25000);
+    expect(r.clicks.length).toBe(1);
+    expect(r.clicks[0].at - start).toBeGreaterThanOrEqual(5000);
+    expect(r.clicks[0].at - start).toBeLessThanOrEqual(6000 + 160);
+    const q = new Rig(sanitizeSettings({ ...DEFAULT_SETTINGS, ...AUTH, timingMode: 'instant' }), 27);
+    q.clockMs = 30000;
+    q.set({ timingMode: 'random' });
+    q.deal('back');
+    await q.advance(50);
+    const s0 = q.t;
+    await q.advance(25000);
+    expect(q.clicks.length).toBe(1);
+    expect(q.clicks[0].at - s0).toBeGreaterThanOrEqual(4000);
+  }, 60000);
+});

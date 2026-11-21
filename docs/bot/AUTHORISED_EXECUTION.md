@@ -1,4 +1,4 @@
-# Authorised execution and action scheduling (0.9.1)
+# Authorised execution and action scheduling (0.9.1; timing modes 0.9.2)
 
 For play-money games whose organiser allows bots (a bot-versus-bot competition). Nothing here applies anywhere else:
 outside such games keep the extension in recommend or manual mode.
@@ -50,13 +50,33 @@ dashboard all say which engine decided.
 
 `src/bot/ext/scheduler.ts`. Settings → **Authorised autonomous play: timing**.
 
+Since 0.9.2 there are exactly two, mutually exclusive **timing modes**:
+
+- **Random** (the default): the delay rules below.
+- **Instant**: no intentional waiting. The action is executed as soon as the recommendation is ready and has passed
+  the same checks as in Random: the permission gate (`mayAct`), state reconciliation and the executor's re-read
+  and legality validation. Instant bypasses none of them. The deadline rule still applies. The minimum and maximum
+  are kept but not used.
+
+In recommend or manual mode nothing is clicked, whichever timing mode is selected. Changing the mode, or the bounds,
+while an action is pending cancels that action with the reason ("timing mode changed to instant", "settings
+changed"). The opportunity keeps its start and deadline and gets a delay drawn under the new policy, and the
+decision is made again. The used-decision-point record still allows at most one click.
+
+**Migration from 0.9.1** (`records.ts` `timingFields`): 0.9.1 had a "Randomised delay" switch.
+- Settings stored with it on (its default) become Random with the stored bounds.
+- Off with a 0 s minimum (no waiting) becomes Instant.
+- Off with a positive minimum (a fixed delay) becomes Random with maximum = minimum, which is the same fixed delay.
+
 | Setting | Default | Range |
 |---|---|---|
-| Randomised delay | on | on: uniform between minimum and maximum; off: always the minimum |
-| Minimum target delay | 4 s | 0-60 s |
-| Maximum target delay | 20 s | up to 120 s, raised to the minimum if lower |
+| Timing mode | Random | Random or Instant |
+| Random: minimum delay | 4 s | 0-60 s |
+| Random: maximum delay | 20 s | up to 120 s, raised to the minimum if lower |
 | Deadline safety margin | 3 s | 0.5-10 s |
 | Clock to assume when none is shown | 20 s | 3-120 s |
+
+Random mode:
 
 - The delay is drawn **once per decision opportunity** (hand, street, state version), when Hero's turn is first
   confirmed (table and engine agree, no blocker). That is before any recommendation exists, so the delay cannot depend

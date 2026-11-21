@@ -75,7 +75,9 @@ mode: manual | recommend | autonomous        default recommend
 estop: boolean
 authorizationConfirmed: boolean, authorizedTables: [tableId]
 exploitWeight (0..1), assumedClockMs (3-120 s, default 20 s), minConfidence
-randomDelay: boolean                         default true (0.9.1; replaces minThinkMs / maxThinkMs, which are dropped)
+timingMode: instant | random                 default random (0.9.2; replaces 0.9.1's randomDelay, migrated on read:
+                                             on -> random, off with a 0 s minimum -> instant, off with a positive
+                                             minimum -> random with max = min). 0.9.1 replaced minThinkMs / maxThinkMs.
 minDelayMs (0-60 s, default 4 s), maxDelayMs (>= min, up to 120 s, default 20 s), deadlineMarginMs (0.5-10 s, default 3 s)
 v3ExecutionOptIn: boolean                    default false (0.9.1). Lets version 3 act where mayAct() otherwise allows
                                              it. Stored only together with authorizationConfirmed: reading settings

@@ -119,7 +119,7 @@ export class LiveController {
 
   private policy(): TimingPolicy {
     const s = this.settings;
-    return { randomDelay: s.randomDelay, minDelayMs: s.minDelayMs, maxDelayMs: s.maxDelayMs, deadlineMarginMs: s.deadlineMarginMs, assumedClockMs: s.assumedClockMs };
+    return { mode: s.timingMode, minDelayMs: s.minDelayMs, maxDelayMs: s.maxDelayMs, deadlineMarginMs: s.deadlineMarginMs, assumedClockMs: s.assumedClockMs };
   }
 
   /** Cancel whatever is pending (page hidden, controller replaced). Later ticks plan again from the table. */
@@ -139,7 +139,10 @@ export class LiveController {
       : s.mode !== old.mode ? `mode changed to ${s.mode}`
         : mayAct(old, table) && !mayAct(s, table) ? `execution no longer permitted (${executionStatus(s, table).reason})`
           : s.strategyEngine !== old.strategyEngine ? `strategy changed from ${old.strategyEngine} to ${s.strategyEngine}`
-            : 'settings changed';
+            : s.timingMode !== old.timingMode ? `timing mode changed to ${s.timingMode}`
+              : 'settings changed';
+    const timingChanged = s.timingMode !== old.timingMode || s.minDelayMs !== old.minDelayMs || s.maxDelayMs !== old.maxDelayMs
+      || s.deadlineMarginMs !== old.deadlineMarginMs || s.assumedClockMs !== old.assumedClockMs;
     const exploitChanged = s.exploitWeight !== this.settings.exploitWeight || s.strategyEngine !== this.settings.strategyEngine;
     const shadowChanged = s.shadowV3 !== this.settings.shadowV3 || exploitChanged;
     this.settings = s;
@@ -156,6 +159,8 @@ export class LiveController {
     // new mode (for example recommend -> autonomous while it is Hero's turn). The executor's own
     // used-decision-point record still prevents a second click for a point already acted on.
     this.clearDecision(why);
+    // New timing: the opportunity keeps its start and deadline and gets a delay drawn under the new policy.
+    if (timingChanged) this.scheduler.replan(this.policy());
     this.publish(true);
   }
 
@@ -570,7 +575,7 @@ export class LiveController {
   private scheduleView(): ScheduleView {
     const now = this.deps.now(), sc = this.scheduler, p = sc.pending, plan = p ? sc.get(p.key) : undefined;
     return {
-      policy: this.policy(),
+      policy: (({ mode, ...rest }) => ({ timingMode: mode, ...rest }))(this.policy()),
       pending: p && plan ? {
         key: p.key, label: p.label, decidedBy: p.decidedBy, fallback: p.fallback, state: p.state, targetDelayMs: plan.targetDelayMs, computeMs: p.computeMs,
         remainingMs: Math.max(0, plan.dueAt - now), deadlineInMs: plan.deadlineAt - now, deadlineSource: plan.deadlineSource, conflict: plan.conflict, capped: plan.capped,

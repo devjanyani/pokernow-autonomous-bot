@@ -26,11 +26,14 @@ export interface Settings {
   /** 0..1 weight of opponent-specific adjustments. */
   exploitWeight: number;
   /**
-   * Action scheduling on authorised tables (scheduler.ts). One delay per decision opportunity, drawn when Hero's
-   * turn is confirmed, uniform in [minDelayMs, maxDelayMs] (the minimum when randomDelay is off), the same for every
-   * action type, computation included. Never past the deadline minus deadlineMarginMs.
+   * Action scheduling on authorised tables (scheduler.ts), two mutually exclusive modes (0.9.2):
+   *   'random'  one delay per decision opportunity, drawn when Hero's turn is confirmed, uniform in
+   *             [minDelayMs, maxDelayMs], the same for every action type, computation included (the default);
+   *   'instant' no intentional waiting: the action is executed as soon as the recommendation is ready and has passed
+   *             the same permission, reconciliation and legality checks.
+   * Both: never past the deadline minus deadlineMarginMs. Replaces 0.9.1's `randomDelay` (migrated on read).
    */
-  randomDelay: boolean;
+  timingMode: TimingMode;
   minDelayMs: number;
   maxDelayMs: number;
   deadlineMarginMs: number;
@@ -66,10 +69,11 @@ export interface Settings {
   v3ExecutionOptIn: boolean;
 }
 export type StrategyEngine = 'v1' | 'v2' | 'v3';
+export type TimingMode = 'instant' | 'random';
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1, mode: 'recommend', estop: false, authorizationConfirmed: false, authorizedTables: [],
-  exploitWeight: 1, randomDelay: true, minDelayMs: 4000, maxDelayMs: 20000, deadlineMarginMs: 3000, assumedClockMs: 20000, minConfidence: 0.7,
+  exploitWeight: 1, timingMode: 'random', minDelayMs: 4000, maxDelayMs: 20000, deadlineMarginMs: 3000, assumedClockMs: 20000, minConfidence: 0.7,
   showPanel: true, timeoutAction: 'check-fold', selectorOverrides: {}, recordDiagnostics: true, strategyEngine: 'v2', shadowV3: false, v3ExecutionOptIn: false,
 };
 
@@ -77,6 +81,22 @@ const clamp = (x: unknown, lo: number, hi: number, def: number): number => {
   const n = Number(x);
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
 };
+
+/**
+ * Timing mode with the 0.9.1 migration. A stored `timingMode` wins. Otherwise (settings written by 0.9.1, which had
+ * a `randomDelay` switch): randomDelay off with a 0 s minimum was "no waiting" and becomes 'instant' (the stored
+ * maximum is kept, the minimum returns to the default for a later switch to Random); randomDelay off with a positive
+ * minimum was a fixed delay and stays one ('random' with maximum = minimum); anything else is 'random' with the stored
+ * bounds. Nothing the user chose is lost.
+ */
+function timingFields(r: Record<string, unknown>, minDelayMs: number, maxDelayMs: number): Pick<Settings, 'timingMode' | 'minDelayMs' | 'maxDelayMs'> {
+  if (r.timingMode === 'instant' || r.timingMode === 'random') return { timingMode: r.timingMode, minDelayMs, maxDelayMs };
+  if (r.randomDelay === false) {
+    if (minDelayMs === 0) { const min = DEFAULT_SETTINGS.minDelayMs; return { timingMode: 'instant', minDelayMs: min, maxDelayMs: Math.max(min, maxDelayMs) }; }
+    return { timingMode: 'random', minDelayMs, maxDelayMs: minDelayMs };
+  }
+  return { timingMode: 'random', minDelayMs, maxDelayMs };
+}
 
 /** Validate anything read from storage or received in a message. Unknown fields are dropped. */
 export function sanitizeSettings(raw: unknown): Settings {
@@ -95,7 +115,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     version: 1, mode, estop: r.estop === true, authorizationConfirmed,
     authorizedTables: Array.isArray(r.authorizedTables) ? r.authorizedTables.filter((t): t is string => typeof t === 'string' && /^[\w-]{1,80}$/.test(t)).slice(0, 50) : [],
     exploitWeight: clamp(r.exploitWeight, 0, 1, d.exploitWeight),
-    randomDelay: r.randomDelay !== false, minDelayMs, maxDelayMs: Math.max(minDelayMs, clamp(r.maxDelayMs, 0, 120000, d.maxDelayMs)),
+    ...timingFields(r, minDelayMs, Math.max(minDelayMs, clamp(r.maxDelayMs, 0, 120000, d.maxDelayMs))),
     deadlineMarginMs: clamp(r.deadlineMarginMs, 500, 10000, d.deadlineMarginMs),
     assumedClockMs: clamp(r.assumedClockMs, 3000, 120000, d.assumedClockMs),
     minConfidence: clamp(r.minConfidence, 0.4, 1, d.minConfidence),
@@ -322,7 +342,7 @@ export interface ExecutionTiming {
 }
 
 export interface ScheduleView {
-  policy: { randomDelay: boolean; minDelayMs: number; maxDelayMs: number; deadlineMarginMs: number; assumedClockMs: number };
+  policy: { timingMode: TimingMode; minDelayMs: number; maxDelayMs: number; deadlineMarginMs: number; assumedClockMs: number };
   /** The action waiting to be executed for the current decision point, if any. */
   pending: null | {
     key: string; label: string; decidedBy: string; fallback: string | null; state: 'waiting' | 'executing';

@@ -35,7 +35,7 @@ export function renderSettings(root: HTMLElement, ctx: Ctx): void {
     i.addEventListener('change', () => void ctx.saveSettings({ [key]: Math.round(Number(i.value) * 1000) }).then(() => { i.value = String(ctx.settings()[key] / 1000); toast('Saved.'); rerender(); }));
     return field(label, help, i);
   };
-  const toggle = (key: 'showPanel' | 'recordDiagnostics' | 'shadowV3' | 'randomDelay', label: string, help: string) => {
+  const toggle = (key: 'showPanel' | 'recordDiagnostics' | 'shadowV3', label: string, help: string) => {
     const c = el('input', { type: 'checkbox', id: `set-${key}`, class: 'switch' });
     c.checked = settings[key];
     c.addEventListener('change', () => void ctx.saveSettings({ [key]: c.checked }));
@@ -49,13 +49,20 @@ export function renderSettings(root: HTMLElement, ctx: Ctx): void {
     toggle('showPanel', 'Show the in-page panel', 'The small movable panel on the PokerNow table.'));
 
   // ---- authorised autonomous play: timing ----
-  const conflict = settings.assumedClockMs - settings.deadlineMarginMs < settings.maxDelayMs
+  const conflict = settings.timingMode === 'random' && settings.assumedClockMs - settings.deadlineMarginMs < settings.maxDelayMs
     ? el('p', { class: 'small warn', id: 'set-timing-conflict' }, `When the page shows no clock, the assumed ${settings.assumedClockMs / 1000} s clock minus the ${settings.deadlineMarginMs / 1000} s margin leaves ${Math.max(0, settings.assumedClockMs - settings.deadlineMarginMs) / 1000} s, so delays are capped there${settings.assumedClockMs - settings.deadlineMarginMs < settings.minDelayMs ? ' and the minimum cannot be met' : ''}. A clock shown by the page takes precedence.`)
     : null;
-  const timing = group('set-timing', 'Authorised autonomous play: timing', 'Applies only where clicking is permitted (autonomous mode, organiser authorisation confirmed, this table authorised). One delay is drawn per decision when your turn is confirmed, before the recommendation exists, so folds, checks, calls, bets and raises are timed the same way. Computation counts toward the delay. The deadline always wins: the action is due no later than the safety margin before it; when that leaves less than the minimum the minimum is not met and the dashboard says so. A plain uniform range, not a model of human timing.',
-    toggle('randomDelay', 'Randomised delay', 'On: uniform between the minimum and the maximum, drawn per decision. Off: always the minimum.'),
-    secs('minDelayMs', 'Minimum target delay (s)', 'Default 4.'),
-    secs('maxDelayMs', 'Maximum target delay (s)', 'Default 20. Raised to the minimum if lower.'),
+  const modeSel = select<Settings['timingMode']>(settings.timingMode, [
+    ['random', 'Random: wait a delay drawn per decision (default)'],
+    ['instant', 'Instant: act as soon as the recommendation is ready'],
+  ], (v) => {
+    void ctx.saveSettings({ timingMode: v }).then(() => { toast(`Timing mode: ${v === 'instant' ? 'Instant' : 'Random'}. A pending action is cancelled and decided again under the new mode.`); rerender(); });
+  }, 'Timing mode');
+  modeSel.id = 'set-timingMode';
+  const timing = group('set-timing', 'Authorised autonomous play: timing', 'Applies only where clicking is permitted (autonomous mode, organiser authorisation confirmed, this table authorised); in recommend or manual mode nothing is ever clicked, whatever is chosen here. Two modes. Random: one delay is drawn per decision when your turn is confirmed, before the recommendation exists, so folds, checks, calls, bets and raises are timed the same way; computation counts toward the delay; a plain uniform range, not a model of human timing. Instant: no intentional waiting; the action goes as soon as the recommendation is ready and has passed the same authorisation, reconciliation and legality checks. In both modes the deadline wins: the action is due no later than the safety margin before it (in Random, when that leaves less than the minimum the minimum is not met and the dashboard says so).',
+    field('Timing mode', 'Changing it while an action is pending cancels that action; the decision is made again under the new mode.', modeSel),
+    secs('minDelayMs', 'Random: minimum delay (s)', 'Default 4. Not used in Instant mode.'),
+    secs('maxDelayMs', 'Random: maximum delay (s)', 'Default 20. Raised to the minimum if lower. Not used in Instant mode.'),
     secs('deadlineMarginMs', 'Deadline safety margin (s)', 'Act at least this long before the deadline. 0.5 to 10, default 3.'),
     secs('assumedClockMs', 'Clock to assume when none is shown (s)', 'Counted from the start of your turn; never unlimited. 3 to 120, default 20.'),
     conflict,
