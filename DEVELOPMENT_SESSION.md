@@ -1,5 +1,26 @@
 # Development session log
 
+2026-11-21, third part: live session forensic audit (documents only), from `1905518`.
+
+## Current state (checkpoint, forensic audit)
+
+- **Report:** `reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md`. The bundle
+  `debug_bundles/poker-bot-debug-2026-11-21T20-16-26-506Z.json` stays git-ignored.
+- **Tools:** the existing `sim/bot/audit-bundle.ts` and `audit-hand.ts`, plus scratch scripts (not committed). The
+  scratch scripts:
+  - re-run the current engine at every recorded Hero point (123 of 125 live recommendations reproduced);
+  - compute equity against the engine's own villain ranges (`buildTable` + `multiwayEquity`);
+  - detect 1-second-grid frame cadence (background throttling).
+- **How to tell bot actions from outside actions:** an executed action always has a decision record with
+  `execution`. A Hero action without one was not sent by the executor.
+- **Not changed:** strategy, timing, permissions and engines.
+
+## To resume
+
+Only on instruction: 3.1b reliability fixes D1, D2, D4, D5, then the pot-odds floor in the harness (roadmap §1.3).
+
+---
+
 2026-11-21, second part: Phase 3.1 and timing modes (0.9.2), from `c256433`.
 
 ## Current state (checkpoint, v0.9.2)

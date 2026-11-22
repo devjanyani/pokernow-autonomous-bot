@@ -4,7 +4,33 @@ Last updated: 2026-11-21. Branch `autonomous-bot`. Version 0.9.2.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-21, version 0.9.2: Phase 3.1 and timing modes)
+## Checkpoint (2026-11-21, live session forensic audit; documents only)
+
+- **Report:** [reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md](reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md),
+  an anonymised audit of the 2026-11-21 debug bundle (0.9.1). The bundle stays private and git-ignored. No code
+  changed.
+- **Main autonomous table:**
+  - 53 valid hands, +125 chips (+62.5 bb; +118 ± 352 bb/100);
+  - two hands make up +246 chips;
+  - the biggest winner (QJs) was played preflop by hand, against the bot's fold.
+- **Who acted:** 61 Hero actions were executed by the bot and 12 were not.
+- **Engine usage:** v3 decided 2 of 63 decisions, every heads-up postflop point. v2 decided all preflop points (50)
+  and multiway pots (11).
+- **Confirmed defects:**
+  - page timer throttling delayed an action to 24.65 s (target 5.51 s) and probably caused one timeout fold;
+  - returning-player posts are not modelled, so the hand becomes invalid and the bot safe-folds;
+  - after one stale read, the controller arms the same decision point again (the executor rejected the duplicate);
+  - timing attribution is wrong for that duplicate;
+  - cancelled recommendations and outside clicks are not recorded;
+  - two price-blind preflop heuristic folds contradict the engine's own equity.
+- **Strategic concerns, not changed:**
+  - full-ring early seats pick hands by equity ordering (QJs out, A9o in);
+  - the iso threshold folds KQo behind one limper;
+  - opponent jam ranges are very tight (the QQ and 99 folds).
+- Overall tightness is not demonstrated (bot VPIP 13%, 95% interval 6–24%, against 17% simulated).
+- **Next:** a 3.1b reliability step, then a pot-odds floor judged in the harness (roadmap §1.3). Only on instruction.
+
+## Previous checkpoint (2026-11-21, version 0.9.2: Phase 3.1 and timing modes)
 
 - **Phase 3.1** ([reports/PHASE_3_1_PREFLOP_COVERAGE.md](reports/PHASE_3_1_PREFLOP_COVERAGE.md), [reports/PHASE_3_1_EVALUATION_BASELINE.md](reports/PHASE_3_1_EVALUATION_BASELINE.md)):
   - exhaustive position / action-order tests for 2–10 players (one label defect fixed);

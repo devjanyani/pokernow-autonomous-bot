@@ -84,6 +84,25 @@ with v2. The pool needs a punishing opponent before it can gate preflop changes.
    harness, with seeds outside 41000–41999.
 4. **Out of scope until then:** EV preflop (3.3), bluffing calibration (3.4).
 
+### 1.3 Amendment from the live forensic audit (2026-11-21)
+
+[reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md](../../reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md)
+covers 58 hands at a 5–10-handed autonomous table on 0.9.1.
+
+Recommended order:
+
+0. **3.1b reliability, before any strategy work.** No strategy change; each fix needs a deterministic regression
+   test.
+   - Detect and report page timer throttling, and keep the deadline cap enforceable from the service worker (D1).
+   - Add live and dead posts to the engine and tracker (D2).
+   - Correct the timing attribution in `fired()` (D4).
+   - Record cancelled recommendations and Hero actions the executor did not send (D5).
+   - D3 is already caught by the executor; optionally skip re-deciding a fired point.
+1. **First strategy candidate:** a pot-odds floor in the two price-blind heuristic branches (audit §6.3). It is
+   judged in the paired harness after item 1 of §1.2 (the punishing opponent), not on live hands.
+2. **Stays with the data work (Phase 3.2):** full-ring early-seat composition, iso-raise thresholds and opponent
+   jam-range widths (audit §6.1, §6.2, §6.4).
+
 ## 2. Phase 3.2: validated preflop range data and mixed-frequency actions
 
 | Item | Content |
