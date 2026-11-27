@@ -41,8 +41,17 @@ export function rebuildHand(rec: RecordedHand, eventCount = rec.events.length): 
   if (!button) throw new Error(`${rec.handId}: no button seat in the record`);
   const dealt = rec.seats.filter((s) => s.dealtIn);
   const noSmallBlind = dealt.length > 2 && !rec.events.some((e) => e.kind === 'post-sb');
+  // Entry / re-entry posts (live and dead), as the tracker recorded them.
+  const extra = new Map<number, { seat: number; live: number; dead: number }>();
+  for (const e of rec.events) {
+    if (e.kind !== 'post-live' && e.kind !== 'post-dead') continue;
+    const x = extra.get(e.seat) ?? { seat: e.seat, live: 0, dead: 0 };
+    if (e.kind === 'post-live') x.live += e.amount; else x.dead += e.amount;
+    extra.set(e.seat, x);
+  }
   const h = createHand({
     handId: rec.handId, buttonSeat: button.seat, smallBlind: rec.smallBlind, bigBlind: rec.bigBlind, ante: rec.ante ?? 0, noSmallBlind,
+    ...(extra.size ? { extraPosts: [...extra.values()] } : {}),
     seats: rec.seats.map((s) => ({ seat: s.seat, playerId: s.playerId ?? `seat${s.seat}`, name: s.name ?? `P${s.seat}`, stack: s.startStack, sittingOut: !s.dealtIn })),
   });
   const board = rec.board.map(card);

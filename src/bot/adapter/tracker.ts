@@ -212,6 +212,11 @@ export class HandTracker {
   private discrepancies: Discrepancy[] = [];
   private sawCards = new Set<number>();
   private lastObs: TableObs | null = null;
+  /** The observation before the current one (a hand is started from the current one; stacks before it come from here). */
+  private prevObs: TableObs | null = null;
+  /** Dead money posted by a seat this hand (re-entry posts): part of its stack at the start of the hand. */
+  private deadPosted = new Map<number, number>();
+  private uncertainStart = false;
   private sig = '';
   private sigSince = 0;
   private settled = false;
@@ -342,6 +347,7 @@ export class HandTracker {
     const sig = obsSignature(obs);
     if (sig !== this.sig) { this.sig = sig; this.sigSince = obs.ts; }
     this.settled = obs.ts - this.sigSince >= this.settleMs;
+    this.prevObs = this.lastObs;
     this.lastObs = obs;
     this.blockers = []; this.warnings = [];
     this.legal = { status: 'n/a', detail: null, actions: null };
@@ -425,6 +431,7 @@ export class HandTracker {
     this.h = null; this.valid = true; this.issues = []; this.emitted = false; this.reveals = new Map();
     this.heroSeat = null; this.heroCards = null; this.stuckSince = null; this.uncertain = false;
     this.meta = []; this.discrepancies = []; this.sawCards = new Set(); this.initialising = false; this.lag = null;
+    this.deadPosted = new Map(); this.uncertainStart = false;
     this.lastDealer = obs.dealerSeat;
     const fail = (why: string) => { this.waitingReason = why; };
     if (obs.board.length !== 0) return fail('joined mid-hand (or the previous board is still showing): waiting for the next hand');
@@ -443,13 +450,14 @@ export class HandTracker {
     const ambiguous = new Set([...names].filter(([, n]) => n > 1).map(([name]) => name));
     const ante = obs.ante ?? 0;
     const dealtSeats = new Set(present.map((s) => s.seat));
-    const build = (noSmallBlind: boolean) => createHand({
+    const build = (noSmallBlind: boolean, extraPosts: { seat: number; live: number; dead: number }[] = []) => createHand({
       handId: `${obs.tableId}:${obs.handLabel ?? 'h'}:${this.handsSeen + 1}:${obs.ts}`,
       buttonSeat: obs.dealerSeat as number, smallBlind: obs.smallBlind ?? (obs.bigBlind as number) / 2, bigBlind: obs.bigBlind as number, ante, noSmallBlind,
       seats: [...obs.seats].sort((a, b) => a.seat - b.seat).map((s) => ({
         seat: s.seat, playerId: idOf(s, ambiguous, obs.tableId), name: s.name,
-        stack: (s.stack ?? 0) + s.bet + (dealtSeats.has(s.seat) ? ante : 0), sittingOut: !dealtSeats.has(s.seat),
+        stack: (s.stack ?? 0) + s.bet + (dealtSeats.has(s.seat) ? ante : 0) + (extraPosts.find((x) => x.seat === s.seat)?.dead ?? 0), sittingOut: !dealtSeats.has(s.seat),
       })),
+      ...(extraPosts.length ? { extraPosts } : {}),
     });
     // Which blinds were posted is read from the chips on the table, not assumed from the button alone:
     // the standard layout, or a dead small blind (the small-blind seat sits out and only a big blind is
@@ -459,8 +467,24 @@ export class HandTracker {
     const fits: HandState[] = [];
     if (!this.blindsMissing(standard, obs)) fits.push(standard);
     if (present.length > 2) { try { const d = build(true); if (!this.blindsMissing(d, obs)) fits.push(d); } catch { /* not a possible layout */ } }
-    const h = fits.find((c) => obs.toActSeat !== null && c.toAct === obs.toActSeat) ?? fits[0] ?? standard;
+    let h = fits.find((c) => obs.toActSeat !== null && c.toAct === obs.toActSeat) ?? fits[0] ?? standard;
     if (h !== standard) this.note('dead small blind: only a big blind is posted this hand');
+    // Entry and re-entry posts (a player returning from sitting out posts a big blind outside the blinds, and the
+    // missed small blind dead; recorded 2026-11-21 hand 45). Recognised only where no action can explain the chips.
+    const re = this.reentryPosts(h, obs, ante, h === standard && fits.includes(standard));
+    if (re.wait) {
+      if (this.initSince === null) this.initSince = obs.ts;
+      if (obs.ts - this.initSince < this.initMs) { this.initialising = true; return fail(`hand starting: ${re.wait}`); }
+      this.note(`${re.wait}; started without modelling it`);
+      this.uncertainStart = true;
+    } else if (re.posts.length) {
+      try {
+        h = build(h !== standard, re.posts);
+        for (const x of re.posts) { this.note(`seat ${x.seat}: entry post of ${x.live} (live)${x.dead ? ` and ${x.dead} dead` : ''}`); if (x.dead) this.deadPosted.set(x.seat, x.dead); }
+      } catch (e) { this.note(`entry post not modelled: ${(e as Error).message}`); this.uncertainStart = true; }
+    }
+    for (const n of re.notes) this.note(n);
+    if (re.uncertain) this.uncertainStart = true;
     // If no layout fits, the snapshot mixes two hands or the button was read before it moved: wait briefly.
     const missing = fits.length ? null : this.blindsMissing(standard, obs);
     if (missing) {
@@ -469,6 +493,7 @@ export class HandTracker {
     }
     this.initSince = null;
     this.h = h;
+    if (this.uncertainStart) { this.uncertain = true; this.uncertainStart = false; }
     for (let i = 0; i < h.events.length; i++) {
       const ev = h.events[i]; const s = seatOf(h, ev.seat);
       this.meta.push({ seq: i, ts: obs.ts, source: 'forced-post', inferred: false, uncertain: false, note: null, stackAfter: s.startStack - h.events.slice(0, i + 1).filter((x) => x.seat === ev.seat).reduce((a, x) => a + x.amount, 0), streetCommit: ev.to, totalCommit: h.events.slice(0, i + 1).filter((x) => x.seat === ev.seat).reduce((a, x) => a + x.amount, 0) });
@@ -479,6 +504,73 @@ export class HandTracker {
     else if (heroObs && dealtSeats.has(heroObs.seat)) this.note('hero cards not readable yet');
     // A straddle shows up as a blind-sized bet from the first seat to act that exceeds the big blind
     // before anyone could have acted; the engine cannot tell it from a raise, which is equivalent for play.
+  }
+
+  /**
+   * Chips in front of a seat that is not a blind, at the start of a hand, that no action can explain. Recognised only
+   * in the situation the recordings show (2026-11-18 hands 28 and 32, 2026-11-21 hands 45 and 60): the standard blind
+   * layout with every blind visible, the table shows the hand's FIRST actor and the poster sits after it (or is that
+   * first actor, when its dead small blind is confirmed by its own stack) (nobody has acted, so chips in front of a later seat cannot be a call), no
+   * seat shows more than its forced amount, and the chips are exactly one big blind (a live post). Money in the pot
+   * beyond the chips in front and the antes is the missed small blind posted dead, attributed to a single poster
+   * when its stack before the hand confirms it; when that stack was not seen it is attributed and the hand is marked
+   * uncertain; when the stack contradicts it, it is not attributed. Anything else is left to the ordinary rules with
+   * a note, never guessed.
+   */
+  private reentryPosts(h: HandState, obs: TableObs, ante: number, standardLayout: boolean): { posts: { seat: number; live: number; dead: number }[]; wait: string | null; uncertain: boolean; notes: string[] } {
+    const tol = this.tolerance;
+    const out = { posts: [] as { seat: number; live: number; dead: number }[], wait: null as string | null, uncertain: false, notes: [] as string[] };
+    const seatObs = (seat: number) => obs.seats.find((x) => x.seat === seat);
+    const cands = h.seats.filter((e) => { const o = seatObs(e.seat); return e.dealtIn && e.streetCommit <= tol && !!o && o.bet > tol && !o.folded; });
+    if (!cands.length) return out;
+    const list = cands.map((c) => c.seat).join(', ');
+    if (obs.toActSeat === null) { out.wait = `seat ${list} shows chips in front before the first action and no acting seat is shown: a forced post cannot be told from a call yet`; return out; }
+    const forcedOver = h.seats.some((e) => { const o = seatObs(e.seat); return e.dealtIn && !!o && o.bet > Math.max(e.streetCommit, h.bigBlind) + tol; });
+    if (!standardLayout || obs.toActSeat !== h.toAct || forcedOver) {
+      out.notes.push(`seat ${list} shows chips in front that the blinds do not explain, but the table is not at the first action of the hand: treated as actions, not posts`);
+      return out;
+    }
+    for (const e of cands) {
+      const o = seatObs(e.seat)!;
+      if (Math.abs(o.bet - h.bigBlind) > tol) { out.notes.push(`seat ${e.seat} shows ${o.bet} before its turn, which is not one big blind: not modelled as a post`); out.uncertain = true; continue; }
+      out.posts.push({ seat: e.seat, live: o.bet, dead: 0 });
+    }
+    // The first actor itself showing one big blind (2026-11-18 hand 32) is a post only when its dead small blind is
+    // confirmed by its own stack below; otherwise it is not modelled and the hand is marked uncertain.
+    const atActor = out.posts.find((x) => x.seat === obs.toActSeat) ?? null;
+    const dropAtActor = () => {
+      if (!atActor) return out;
+      out.posts = out.posts.filter((x) => x !== atActor);
+      out.uncertain = true;
+      out.notes.push(`seat ${atActor.seat} shows one big blind while it is the first to act, with no confirmed dead small blind: not modelled as a post`);
+      return out;
+    };
+    if (!out.posts.length || obs.pot === null) return dropAtActor();
+    const dealt = h.seats.filter((e) => e.dealtIn).length;
+    const inFront = obs.seats.reduce((a, x) => a + (x.bet > 0 ? x.bet : 0), 0) + ante * dealt;
+    const excess = Math.round((obs.pot - inFront) * 100) / 100;
+    if (excess <= tol) return dropAtActor();
+    if (out.posts.length !== 1 || excess > h.smallBlind + tol) {
+      out.notes.push(`the pot holds ${excess} more than the chips in front and the antes, which cannot be attributed to one entry post: not modelled`);
+      return dropAtActor();
+    }
+    const x = out.posts[0];
+    const o = seatObs(x.seat)!;
+    const prev = this.prevObs?.seats.find((y) => y.seat === x.seat && y.name === o.name);
+    const before = prev && prev.stack !== null && prev.bet <= tol ? prev.stack : null;
+    if (before !== null && o.stack !== null && Math.abs(before - (o.stack + o.bet + ante) - excess) <= tol) {
+      x.dead = excess;
+      return out;
+    }
+    if (x === atActor) return dropAtActor();
+    if (before === null || o.stack === null) {
+      x.dead = excess;
+      out.uncertain = true;
+      out.notes.push(`the pot holds ${excess} more than the chips in front: taken as seat ${x.seat}'s dead small blind, but its stack before the hand was not seen, so this is not confirmed`);
+    } else {
+      out.notes.push(`the pot holds ${excess} more than the chips in front, but seat ${x.seat}'s stack before the hand (${before}) shows it did not pay it: not attributed`);
+    }
+    return out;
   }
 
   /** A blind the engine posted that the table does not show in front of that seat, described; else null. */
@@ -788,7 +880,7 @@ export class HandTracker {
       if (o.stack === null) return out('unavailable', `the stack of seat ${e.seat} could not be read at the start of the next hand`);
       // An ante of the new hand has already left the stack of a player who was dealt in (the same rule as when a hand is started).
       const ante = (next.ante ?? 0) > 0 && (o.hasCards || o.bet > 0) ? (next.ante as number) : 0;
-      const d = Math.round((o.stack + o.bet + ante - e.stack) * 100) / 100;
+      const d = Math.round((o.stack + o.bet + ante + (this.deadPosted.get(e.seat) ?? 0) - e.stack) * 100) / 100;
       if (e.seat === heroSeat) heroDiff = Math.abs(d) > tol ? d : 0;
       if (Math.abs(d) > tol) diffs.push({ seat: e.seat, diff: d, live: !e.folded });
     }

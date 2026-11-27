@@ -216,6 +216,20 @@ export class PokerNowDom implements TableDriver {
 
   // ---- driver -------------------------------------------------------------
 
+  /**
+   * The table action a click on this element stands for (fold, check, call, bet, raise, all-in), or null when it is
+   * not one of the table's action buttons. Used only to recognise Hero's own clicks (events the page marks as real
+   * user input); it never clicks anything.
+   */
+  userActionOf(target: EventTarget | null): string | null {
+    const el = target && typeof (target as Element).closest === 'function' ? (target as Element) : null;
+    const btn = el?.closest('button, input[type="submit"]') as HTMLElement | null;
+    if (!btn || !(btn.closest(this.sel.controls) || btn.closest(this.sel.raiseForm))) return null;
+    if (btn.matches(this.sel.raiseSubmit)) return 'raise';
+    const c = classifyControl({ text: btn.textContent || (btn as HTMLInputElement).value || '', cls: String(btn.className), visible: true, disabled: false });
+    return !c.preset && ['fold', 'check', 'call', 'bet', 'raise', 'all-in'].includes(c.kind) ? c.kind : null;
+  }
+
   async click(kind: 'fold' | 'check' | 'call'): Promise<boolean> {
     const b = this.actionButton(kind);
     if (!b) return false;
@@ -233,7 +247,7 @@ export class PokerNowDom implements TableDriver {
     input.dispatchEvent(new Ev('change', { bubbles: true }));
   }
 
-  async betOrRaise(to: number): Promise<{ submitted: boolean; readBack: number | null; detail: string }> {
+  async betOrRaise(to: number, onTime?: () => string | null): Promise<{ submitted: boolean; readBack: number | null; detail: string }> {
     let input = this.doc.querySelector(this.sel.raiseInput) as HTMLInputElement | null;
     if (!visible(input)) {
       const open = this.actionButton('wager');
@@ -250,6 +264,8 @@ export class PokerNowDom implements TableDriver {
     if (readBack === null || Math.abs(readBack - to) > 0.011) return { submitted: false, readBack, detail: `typed ${text} but the input shows "${input.value}"` };
     const submit = this.doc.querySelector(this.sel.raiseSubmit) as HTMLElement | null;
     if (!visible(submit)) return { submitted: false, readBack, detail: 'no submit control in the bet form' };
+    const late = onTime?.() ?? null;
+    if (late) return { submitted: false, readBack, detail: `not submitted: ${late}` };
     submit.click();
     return { submitted: true, readBack, detail: 'submitted' };
   }

@@ -13,6 +13,8 @@
 //   6. it is Hero's turn according to BOTH the engine and the table
 //   7. the action is legal in the rules engine, amount inside the legal window
 //   8. the matching control exists on the page and agrees with the engine
+//   9. the caller's own last-moment check on the fresh read (since 3.1b: the decision has not expired on the
+//      monotonic clock, the table's clock has not run out), when one is given
 //
 // The decision point is recorded as used BEFORE clicking, so an unknown outcome
 // can never lead to a second click. Afterwards the table is polled to verify
@@ -28,9 +30,11 @@ export interface TableDriver {
   /**
    * Type a bet / raise-to amount and submit it. Must read the amount back from
    * the page and refuse to submit on a mismatch. `submitted` is true only when
-   * the submit control was actually activated.
+   * the submit control was actually activated. `onTime`, when given, is asked
+   * immediately before the submit (entering the amount waits on page timers,
+   * which a background tab can hold): a reason means do not submit.
    */
-  betOrRaise(to: number): Promise<{ submitted: boolean; readBack: number | null; detail: string }>;
+  betOrRaise(to: number, onTime?: () => string | null): Promise<{ submitted: boolean; readBack: number | null; detail: string }>;
 }
 
 export interface Fresh { obs: TableObs; state: TrackerState }
@@ -41,6 +45,13 @@ export interface ExecRequest {
   handId: string;
   street: Street;
   eventCount: number;
+  /**
+   * Last-moment check on the fresh read, after every rule above has passed and immediately before the decision point
+   * is marked used and the click is sent: a reason to reject, or null. Never weakens the checks above.
+   */
+  guard?: (fresh: Fresh) => string | null;
+  /** Time-only check (no table read) asked again immediately before a bet or raise is submitted. */
+  onTime?: () => string | null;
 }
 
 export type ExecStatus = 'accepted' | 'unverified' | 'rejected' | 'failed';
@@ -142,11 +153,13 @@ export class GuardedExecutor {
     try {
       const pre = this.check(req);
       if (!pre.ok) return finish('rejected', pre.reason, false);
+      const late = req.guard ? req.guard(pre.fresh) : null;
+      if (late) return finish('rejected', late, false);
       this.used.add(sig);
       if (this.used.size > 500) this.used.delete(this.used.values().next().value as string);
       let clicked: boolean;
       if (req.action === 'bet' || req.action === 'raise') {
-        const r = await this.driver.betOrRaise(req.to as number);
+        const r = await this.driver.betOrRaise(req.to as number, req.onTime);
         clicked = r.submitted;
         if (!r.submitted) {
           // Nothing was submitted, so the decision point is still open for a different action.

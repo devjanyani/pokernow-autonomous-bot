@@ -44,6 +44,7 @@ export function statusPill(l: LiveState | null, now: number): StatusPill {
   if (l.recommendation.state === 'blocked') return { label: 'Needs attention', tone: 'bad', detail: l.recommendation.reason ?? 'The table state could not be confirmed.' };
   if (bad) return { label: 'Needs attention', tone: 'bad', detail: bad.detail };
   if (l.tracker.unsupported) return { label: 'Needs attention', tone: 'bad', detail: 'This is not a No-Limit Hold\'em table.' };
+  if (l.timing?.warning) return { label: 'Needs attention', tone: 'warn', detail: l.timing.warning };
   if (!l.hand) return { label: 'Waiting', tone: 'muted', detail: 'Waiting for a hand to start.' };
   return { label: 'Ready', tone: 'good', detail: l.acting ? 'Tracking the hand. Acting automatically on this table.' : 'Tracking the hand. Recommendations only.' };
 }
@@ -243,7 +244,9 @@ export function scheduleRows(l: LiveState | null): [string, string][] {
     if (q.conflict) rows.push(['Deadline conflict', q.conflict]);
     else if (q.capped) rows.push(['Shortened', q.capped]);
   } else rows.push(['Pending action', 'none']);
-  if (sc.lastCancel) rows.push(['Last cancelled', `${sc.lastCancel.label ?? 'pending action'}: ${sc.lastCancel.reason} (${sec(sc.lastCancel.agoMs)} ago)`]);
+  const tm = l.timing;
+  if (tm) rows.push(['Page timers', `${tm.pageVisible === false ? 'table tab hidden' : tm.pageVisible ? 'table tab visible' : 'visibility unknown'} · ${tm.throttled ? `delayed by the browser (longest gap ${sec(tm.recentMaxGapMs)} in the last minute)` : 'on time'}${tm.warning ? ` · ${tm.warning}` : ''}`]);
+  if (sc.lastCancel) rows.push([sc.lastCancel.kind === 'expired' ? 'Last expired' : 'Last cancelled', `${sc.lastCancel.label ?? 'pending action'}: ${sc.lastCancel.reason} (${sec(sc.lastCancel.agoMs)} ago)`]);
   if (sc.lastExecuted) {
     const e = sc.lastExecuted;
     rows.push(['Last executed', `${e.label} · ${e.reason} · ${sec(e.delayMs)} after the turn was confirmed (computation ${sec(e.computeMs)}, waiting ${sec(e.waitedMs)})${e.conflict ? ` · deadline conflict: ${e.conflict}` : ''} · ${sec(e.agoMs)} ago`]);

@@ -18,7 +18,12 @@ import { buildPots, PotBreakdown, settlePots } from './pots';
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 export type Phase = 'waiting' | Street | 'showdown' | 'complete';
 export type ActionKind = 'fold' | 'check' | 'call' | 'bet' | 'raise';
-export type EventKind = ActionKind | 'post-sb' | 'post-bb' | 'post-ante' | 'post-straddle';
+/**
+ * Forced posts. 'post-live': a big blind posted outside the blinds by a player entering or returning to the game
+ * (it counts toward the bet, and the player keeps the option like the big blind). 'post-dead': chips a returning
+ * player puts straight into the pot for a missed small blind (they never count toward the bet).
+ */
+export type EventKind = ActionKind | 'post-sb' | 'post-bb' | 'post-ante' | 'post-straddle' | 'post-live' | 'post-dead';
 
 export const STREETS: readonly Street[] = ['preflop', 'flop', 'turn', 'river'];
 
@@ -48,6 +53,11 @@ export interface HandConfig {
   variant?: string;
   /** Dead small blind: nobody posts it and the first dealt seat left of the button is the big blind. */
   noSmallBlind?: boolean;
+  /**
+   * Entry or re-entry posts by seats that are not the blinds (PokerNow, recorded 2026-11-21: a returning player posts
+   * one big blind live and the missed small blind dead). `live` is at most one big blind; `dead` goes to the pot only.
+   */
+  extraPosts?: { seat: number; live: number; dead: number }[];
 }
 
 export interface SeatState {
@@ -195,6 +205,14 @@ export function createHand(cfg: HandConfig): HandState {
   post(h, bb, cfg.bigBlind, 'post-bb');
   h.currentBet = cfg.bigBlind;
   h.lastRaiseSize = cfg.bigBlind;
+  for (const x of cfg.extraPosts ?? []) {
+    const s = seatOf(h, x.seat);
+    if (!s.dealtIn) throw new RangeError(`seat ${x.seat} posts but is not dealt in`);
+    if (s.pos!.isSmallBlind || s.pos!.isBigBlind) throw new RangeError(`seat ${x.seat} is a blind; an extra post is for other seats`);
+    if (!(x.live >= 0) || x.live > cfg.bigBlind + EPS || !(x.dead >= 0) || x.live + x.dead <= EPS) throw new RangeError(`invalid post by seat ${x.seat}: live ${x.live}, dead ${x.dead}`);
+    if (x.dead > EPS) post(h, s, x.dead, 'post-dead');
+    if (x.live > EPS) post(h, s, x.live, 'post-live');
+  }
   if (straddleSeat !== null) {
     post(h, seatOf(h, straddleSeat), cfg.straddle!, 'post-straddle');
     h.straddle = cfg.straddle!;
@@ -211,7 +229,8 @@ function post(h: HandState, s: SeatState, amount: number, kind: EventKind): void
   const a = Math.min(amount, s.stack);
   s.stack -= a;
   s.totalCommit += a;
-  if (kind !== 'post-ante') s.streetCommit += a;
+  // Antes and dead posts go to the pot without counting toward the bet.
+  if (kind !== 'post-ante' && kind !== 'post-dead') s.streetCommit += a;
   if (s.stack <= EPS) { s.stack = 0; s.allIn = true; }
   pushEvent(h, s, kind, a, false, potBefore, 0);
 }

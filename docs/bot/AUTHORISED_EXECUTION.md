@@ -107,11 +107,37 @@ Random mode:
 - The existing clock-out safe check / fold (Advanced → "When the clock is nearly out and the state is not trusted")
   is unchanged and independent of the scheduler.
 
+### 4.1 Background tabs (0.9.3)
+
+**Keep the table tab in front, in a window that is not minimised.** Browsers delay the timers of a hidden page: Chrome
+checks them at most once a second, and chained timers can be held much longer. On 2026-11-21 a wait was held for
+24.6 s and released only when the tab was shown again, so an action planned for 5.5 s went out at 24.65 s
+([reports/PHASE_3_1B_RELIABILITY.md](../../reports/PHASE_3_1B_RELIABILITY.md) §2). No page timer can guarantee a
+deadline, so since 0.9.3 the extension does not try to act on time in the background. Instead:
+
+- **Expiry:** every wake-up, and the moment just before the click, is judged on the page's monotonic clock. An action
+  more than 0.5 s past its latest safe moment is **expired**: not sent, logged, stored with the reason, and shown as
+  "Last expired".
+- **Uncertain start:** a turn first read more than 2 s after the previous read, with no clock shown, has an unknown
+  start. Its deadline is not established and the action is not sent.
+- **Suspension:** a wait during which the wall clock and the page clock moved apart by more than 1 s means the page
+  or computer was suspended. That action expires too.
+- **Settings re-read:** after delayed timers, the stored settings are read again before the click. An emergency stop
+  pressed while the page was suspended may not have reached it yet.
+- **Bet entry:** a bet amount is submitted only if the action is still on time at the moment of the submit.
+- **Warning:** while autonomous play is armed and the tab is hidden, or its reads were delayed in the last minute,
+  the dashboard and the panel show **Needs attention** with the reason, and the Live tab shows a "Page timers" row.
+
+An expired action means the site's own clock may run out, and PokerNow then folds or checks for Hero and may sit
+Hero out. This is a safe failure, not a way to play unattended in the background.
+
 ## 5. Cancellation and stale actions
 
 A pending action is cancelled at once (the wait is woken, not left to expire) and the reason is kept and shown when:
 
 - it is no longer Hero's turn on the table (Hero acted by hand, a timeout, a new hand);
+- Hero clicks one of the table's action buttons by hand (a real click; since 0.9.3 this cancels at once);
+- the action has expired on the page clock (section 4.1);
 - the hand, the street or the state version changes (for example an opponent's raise is recorded): the new decision
   point gets its own plan and a newly drawn delay;
 - the state stops being confirmed (reconciliation blocker, turn disagreement, contradictory buttons, low confidence)
@@ -139,7 +165,14 @@ After a reload the old page's pending action is gone with it; the new page start
 - **Settings**: the same information under the timing settings, refreshed live.
 - **Popup**: "ACTING automatically on this table with experimental version 3 (v2 for preflop and multiway)".
 - Stored decisions (Hand review, debug bundle) carry `execution.timing`: drawn delay, actual delay, computation,
-  waiting, deadline source, conflict.
+  waiting, deadline source, conflict, and since 0.9.3 the attempt id and the largest timer delay.
+- Since 0.9.3 every recommendation in authorised play is stored once with a `lifecycle`:
+  - its outcome: executed, unverified, rejected, failed, cancelled or expired, with the reason;
+  - how Hero's action is known: sent by the bot, a manual click seen on the page, or only inferred from the table
+    (which cannot be told from the site's own time-out action);
+  - its timing and the page's timer health.
+
+  A cancelled or expired recommendation has `execution: null`.
 
 ## 7. What has been tested
 

@@ -1,10 +1,31 @@
 # Project progress
 
-Last updated: 2026-11-21. Branch `autonomous-bot`. Version 0.9.2.
+Last updated: 2026-11-26. Branch `autonomous-bot`. Version 0.9.3.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-21, live session forensic audit; documents only)
+## Checkpoint (2026-11-26, version 0.9.3: Phase 3.1b live execution and tracking reliability)
+
+- **Report:** [reports/PHASE_3_1B_RELIABILITY.md](reports/PHASE_3_1B_RELIABILITY.md). No strategy, range, model,
+  default, authorisation or timing preference changed.
+- **D1, background tabs:** the 24.65 s action came from Chrome holding the hidden tab's chained timers (read loop and
+  scheduler wait) for about 22–25 s; they were released when the tab was shown again. Now an action past its latest
+  safe moment (+0.5 s), after a suspension, or with an uncertain turn start is **expired, never sent**; stored settings
+  are re-read after delayed timers; bet entry re-checks before the submit; a warning shows when the tab is hidden.
+  Reliable unattended background-tab execution is **not achievable** with this architecture; it fails safe.
+- **D2, entry posts:** engine `post-live` / `post-dead`; the tracker recognises the recorded pattern only. Hand 45 is
+  valid (Hero faces 9); three opponents' posts that were counted as calls are corrected; no hand lost validity.
+- **D3/D4:** one decision point, one attempt, its own timing (hand 17 reproduced in a test).
+- **D5:** `DecisionRecord.lifecycle` (schema 2, optional): outcome, reason, manual click observed vs inferred, table
+  confirmation, timer health. No migration needed.
+- **Verified:**
+- full suite **1,282 / 1,282** (96 files, `npx vitest run --maxWorkers=4 --minWorkers=1`), including the 28 new tests;
+- type-check (`tsc --noEmit`, `npm run typecheck:tools`), lint (0 errors), production build: pass;
+- Chromium, built extension, stand-in table, one at a time: `bot:e2e` 24/24, `bot:e2e:recommend` 32/32,
+  `e2e-v3` 27/27, `bot:e2e:exec` 28/28, `bot:e2e:dashboard` 40/40 (same counts as 0.9.2). Not run on live PokerNow.
+- **Next:** only on instruction (roadmap §1.3 item 1, or Phase 3.2).
+
+## Previous checkpoint (2026-11-21, live session forensic audit; documents only)
 
 - **Report:** [reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md](reports/LIVE_SESSION_FORENSIC_AUDIT_2026_11_21.md),
   an anonymised audit of the 2026-11-21 debug bundle (0.9.1). The bundle stays private and git-ignored. No code

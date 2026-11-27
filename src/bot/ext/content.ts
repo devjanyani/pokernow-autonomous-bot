@@ -177,7 +177,7 @@ async function main(): Promise<void> {
   controller = new LiveController({
     observe: () => dom.observe(performance.now()),
     health: () => dom.health(),
-    driver: { click: (k) => dom.click(k), betOrRaise: (to) => dom.betOrRaise(to) },
+    driver: { click: (k) => dom.click(k), betOrRaise: (to, onTime) => dom.betOrRaise(to, onTime) },
     send,
     loadProfiles: (ids) => new Promise((resolve) => {
       try {
@@ -192,6 +192,9 @@ async function main(): Promise<void> {
     yieldFn,
     random: Math.random,
     render: (l) => panel.render(l),
+    wallNow: () => Date.now(),
+    visible: () => document.visibilityState === 'visible',
+    loadSettings: async () => { try { return sanitizeSettings((await chrome.storage.local.get('settings')).settings); } catch { return null; } },
   }, settings, (Date.now() & 0x7fffffff) >>> 0);
   if (settings.showPanel) panel.mount();
 
@@ -216,7 +219,16 @@ async function main(): Promise<void> {
   setInterval(tick, POLL_MS);
   // Hand any recorded frames to storage before the page goes away.
   addEventListener('pagehide', () => { controller.cancelPending('the page was closed or reloaded'); controller.flush(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') controller.flush(); });
+  // Browsers delay this page's timers while it is hidden: the controller says so on the dashboard and cancels, rather
+  // than sends late, an action that cannot be sent in time. Becoming visible is an event, so the table is read at once.
+  document.addEventListener('visibilitychange', () => {
+    const visible = document.visibilityState === 'visible';
+    controller.noteVisibility(visible);
+    if (visible) tick(); else controller.flush();
+  });
+  // Hero's own clicks on the table's action buttons (isTrusted: real input, never a click the bot sent): evidence of
+  // a manual action, and a pending bot action for that decision point is cancelled.
+  document.addEventListener('click', (e) => { if (!e.isTrusted) return; const kind = dom.userActionOf(e.target); if (kind) controller.noteUserAction(kind); }, true);
   // React to page changes sooner than the poll, coalesced to one read per frame.
   new MutationObserver(() => { if (!scheduled) { scheduled = true; setTimeout(tick, 40); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   send({ type: 'bot/diag', record: { ts: Date.now(), level: 'info', source: 'content', message: `attached to ${location.pathname} in ${settings.mode} mode`, tableId: /\/games\/([\w-]+)/.exec(location.pathname)?.[1] } });

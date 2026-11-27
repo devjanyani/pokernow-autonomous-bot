@@ -231,6 +231,8 @@ function actionText(e: HandRecord['events'][number]): string {
     case 'post-bb': return `posts big blind ${e.amount}`;
     case 'post-ante': return `posts ante ${e.amount}`;
     case 'post-straddle': return `posts straddle ${e.amount}`;
+    case 'post-live': return `posts a big blind to enter or return ${e.amount} (live)`;
+    case 'post-dead': return `posts a missed small blind ${e.amount} (dead)`;
     case 'bet': return `bets ${e.to}`;
     case 'raise': return `raises to ${e.to}`;
     case 'call': return `calls ${e.amount}`;

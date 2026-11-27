@@ -1,5 +1,37 @@
 # Development session log
 
+2026-11-26: Phase 3.1b, live execution and tracking reliability (0.9.3), from `74bcad0`.
+
+## Current state (checkpoint, v0.9.3)
+
+- **Report:** `reports/PHASE_3_1B_RELIABILITY.md`.
+- **D1, background throttling:**
+  - `scheduler.ts` `waitFor` / `verdict` (expiry on the monotonic clock: `LATE_TOLERANCE_MS`, `UNRELIABLE_START_MS`,
+    `CLOCK_JUMP_MS`);
+  - the controller's loop-gap measurement (`LOOP_GAP_MS`), the executor `guard`, `onTime` before a bet submit, and
+    `deps.loadSettings` after delayed timers;
+  - `LiveState.timing` and the warning.
+- **D2:** engine `extraPosts` (`post-live`, `post-dead`), tracker `reentryPosts`, and `rebuild.ts`. Fixture
+  `tests/bot/fixtures/live-2026-11-21-h45.json`, anonymised; made with a throwaway script from the private bundle.
+- **D3/D4/D5:** the controller's `acted` set, attempt ids in the scheduler, and `DecisionRecord.lifecycle` (schema 2).
+  Manual clicks come from `PokerNowDom.userActionOf` (real clicks only).
+- **Tests:** `tests/bot/reliability-31b.test.ts` (28).
+- **Replay check across the 7 private bundles:** a throwaway script fed every recorded frame to `HandTracker` and
+  counted valid / invalid / not-observed hands and hands with entry posts. Before → after: valid 483 → 484, invalid
+  unchanged. Use the same method to check any future tracker rule.
+- **Verified:**
+  - full suite **1,282 / 1,282** (96 files, `npx vitest run --maxWorkers=4 --minWorkers=1`), including the 28 new tests;
+  - type-check (`tsc --noEmit`, `npm run typecheck:tools`), lint (0 errors), production build: pass;
+  - Chromium, built extension, stand-in table, one at a time: `bot:e2e` 24/24, `bot:e2e:recommend` 32/32,
+    `e2e-v3` 27/27, `bot:e2e:exec` 28/28, `bot:e2e:dashboard` 40/40 (same counts as 0.9.2). Not run on live PokerNow.
+
+## To resume
+
+Only on instruction: roadmap §1.3 item 1 (a pot-odds floor judged in the harness), or Phase 3.2. Before a live test,
+keep the table tab visible; the dashboard says when it is not.
+
+---
+
 2026-11-21, third part: live session forensic audit (documents only), from `1905518`.
 
 ## Current state (checkpoint, forensic audit)

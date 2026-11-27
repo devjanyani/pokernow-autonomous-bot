@@ -239,6 +239,56 @@ export interface DecisionRecord {
   execution: { status: string; reason: string; ms: number; timing?: ExecutionTiming } | null;
   /** The exact state the recommendation was computed for. */
   context?: RecommendationContext;
+  /**
+   * What happened to this recommendation, from the decision to its end (since 3.1b, schema 2; absent in records
+   * written before). `execution` keeps its 0.9.1 meaning: set only when the executor was called, so a record with
+   * `execution: null` and a lifecycle outcome of 'cancelled' or 'expired' is a recommendation that was NOT executed.
+   */
+  lifecycle?: DecisionLifecycle;
+}
+
+/** Outcome of one recommendation. */
+export type LifecycleOutcome = 'recommended' | 'executed' | 'unverified' | 'rejected' | 'failed' | 'cancelled' | 'expired';
+
+/**
+ * How Hero's action at this decision point is known.
+ *  bot                    the bot's executor sent it
+ *  manual-click-observed  the page reported a real (user) click on one of the table's action buttons
+ *  manual-inferred        the table shows a Hero action the bot did not send, but no click was seen: a click the page
+ *                         did not report, a keyboard shortcut, or the site's own time-out action (indistinguishable)
+ *  none                   Hero has not acted (yet) at this decision point
+ *  unknown                Hero's turn ended but no Hero action was recorded for this decision point
+ */
+export type HeroActionEvidence = 'bot' | 'manual-click-observed' | 'manual-inferred' | 'none' | 'unknown';
+
+export interface DecisionLifecycle {
+  schema: 2;
+  /** The decision opportunity (hand, street, state version): stable across repeated reads of the same state. */
+  opportunity: string;
+  /** Attempt number on this page; one opportunity normally has exactly one. */
+  attempt: number;
+  mode: Mode;
+  executionPermitted: boolean;
+  strategy: { selected: string; used: string; fallback: string | null };
+  recommendation: { action: string; to: number | null; label: string };
+  /** Scheduling plan (authorised play only). Times are ms from the start of the opportunity on the page clock. */
+  schedule: null | {
+    timingMode: TimingMode; targetDelayMs: number; plannedAfterMs: number; latestSafeAfterMs: number; deadlineSource: string;
+    startUncertaintyMs: number; conflict: string | null; capped: string | null;
+  };
+  /** When the recommendation was ready, ms from the start of the opportunity. */
+  readyAfterMs: number;
+  /** When it was handed to the executor (null: never). */
+  attemptedAfterMs: number | null;
+  outcome: LifecycleOutcome;
+  reason: string | null;
+  heroAction: { evidence: HeroActionEvidence; kind: string | null; afterMs: number | null; detail: string };
+  /** true: the table showed the action; false: not confirmed; null: nothing was sent. */
+  tableConfirmed: boolean | null;
+  /** Page timer health during this attempt. */
+  timers: { maxLateMs: number; lateWakeups: number; clockJumpMs: number; loopGapBeforeMs: number; pageVisible: boolean | null };
+  /** Ordered lifecycle events, ms from the start of the opportunity. */
+  events: { afterMs: number; what: string }[];
 }
 
 /** What a recommendation belongs to. It is stale as soon as any of this changes. */
@@ -327,6 +377,22 @@ export interface LiveState {
   execution?: { enabled: boolean; reason: string };
   /** Authorised-play scheduling: the pending action, its timing, the last cancellation (absent before 0.9.1). */
   schedule?: ScheduleView;
+  /** Whether the page's timers can be trusted right now (absent before 3.1b). */
+  timing?: TimingHealth;
+}
+
+/** Page timer health: browsers delay timers in background tabs, which makes on-time execution impossible. */
+export interface TimingHealth {
+  /** document.visibilityState === 'visible' (null: unknown). */
+  pageVisible: boolean | null;
+  /** Gap between the last two reads of the table (normally about 250 ms). */
+  lastLoopGapMs: number;
+  /** Largest gap in the last minute. */
+  recentMaxGapMs: number;
+  /** Delayed timers were seen in the last minute. */
+  throttled: boolean;
+  /** Shown when autonomous play is armed and on-time execution cannot be relied on; null otherwise. */
+  warning: string | null;
 }
 
 /** How one executed action was timed. Computation is part of the delay, not added to it. */
@@ -339,6 +405,10 @@ export interface ExecutionTiming {
   deadlineSource: string;
   conflict: string | null;
   capped: string | null;
+  /** Attempt identity (3.1b): the timing above belongs to this attempt only. */
+  attempt?: number;
+  /** Largest lateness of one of this attempt's timer wake-ups (3.1b). */
+  maxTimerLateMs?: number;
 }
 
 export interface ScheduleView {
@@ -349,7 +419,7 @@ export interface ScheduleView {
     targetDelayMs: number; computeMs: number; remainingMs: number; deadlineInMs: number; deadlineSource: string;
     conflict: string | null; capped: string | null;
   };
-  lastCancel: { label: string | null; reason: string; agoMs: number } | null;
+  lastCancel: { label: string | null; reason: string; agoMs: number; kind?: 'cancelled' | 'expired' } | null;
   lastExecuted: { label: string; reason: string; delayMs: number; computeMs: number; waitedMs: number; conflict: string | null; agoMs: number } | null;
 }
 

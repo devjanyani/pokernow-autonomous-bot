@@ -103,6 +103,31 @@ Recommended order:
 2. **Stays with the data work (Phase 3.2):** full-ring early-seat composition, iso-raise thresholds and opponent
    jam-range widths (audit §6.1, §6.2, §6.4).
 
+#### 1.3.1 Status of item 0: Phase 3.1b done (2026-11-26, 0.9.3)
+
+[reports/PHASE_3_1B_RELIABILITY.md](../../reports/PHASE_3_1B_RELIABILITY.md). No strategy changed.
+
+- **D1, background throttling:**
+  - expired actions are never sent;
+  - late wake-ups, suspensions and uncertain turn starts are detected on the monotonic page clock;
+  - the stored settings are read again after delayed timers;
+  - bet entry is checked again before the submit;
+  - a visible warning is shown.
+
+  **Departure from the plan above:** the deadline is *not* kept enforceable from the service worker. Its timers have
+  no adequate guarantee (it is stopped when idle, and it cannot reach a frozen page), and waking a throttled page
+  that way is a throttling workaround. Reliable unattended background-tab execution is stated as not achievable;
+  the bot fails safe and warns instead.
+- **D2, entry posts:** `post-live` and `post-dead` in the engine. The tracker recognises them only in the recorded
+  pattern, and keeps everything else explicit and uncertain. Hand 45 is valid; three opponents' posts that were
+  counted as calls are corrected.
+- **D3/D4, the duplicate attempt:** a decision point that was acted on is never decided again, one attempt has one
+  identity, and its timing is its own.
+- **D5, lifecycle records:** one record per attempt, with its outcome, the reason, manual evidence (observed or
+  inferred) and table confirmation. The schema addition is optional; no migration.
+
+**Next:** item 1, the pot-odds floor judged in the harness, only on instruction. Phase 3.2 has not started.
+
 ## 2. Phase 3.2: validated preflop range data and mixed-frequency actions
 
 | Item | Content |

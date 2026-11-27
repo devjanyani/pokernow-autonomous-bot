@@ -15,7 +15,17 @@
 // opportunity reuse its plan (the delay is never redrawn and the start never moves); an observed clock only
 // moves the deadline. Waiting can be cancelled at any moment, and the reason is kept for display.
 //
-// Pure apart from the injected clock and random source, so it is tested deterministically.
+// Background tabs (3.1b). Browsers delay page timers in hidden tabs (Chrome: at most one wake-up per second, and
+// for chained timers sometimes much longer; the 2026-11-21 recording shows a 250 ms wait released 24.6 s late, the
+// moment the tab became visible again). No page timer can guarantee a deadline, so the scheduler does not try to:
+// every wake-up is measured against the monotonic page clock, and an action whose latest safe moment has passed,
+// whose start is not known closely enough, or whose wait spanned a pause in which the wall clock and the page clock
+// diverged, is EXPIRED: it is cancelled with the reason, never sent late.
+//
+// Every armed action is one attempt with its own identity (`id`); firing and timing are recorded on that object, so
+// a second attempt can never overwrite the timing of the first (the 2026-11-21 hand 17 record).
+//
+// Pure apart from the injected clocks and random source, so it is tested deterministically.
 // ============================================================
 
 export interface TimingPolicy {
@@ -49,9 +59,30 @@ export interface ActionPlan {
   capped: string | null;
   /** Created while Hero's turn was already running (page opened or reloaded mid-turn). */
   joinedMidTurn: boolean;
+  /**
+   * How long before `startedAt` the turn may already have begun: the time since the previous read of the table
+   * (about 250 ms normally; much longer when the browser held the page's timers). The assumed deadline counts from
+   * the earliest possible start.
+   */
+  startUncertaintyMs: number;
+  /** Why the deadline cannot be established (no clock shown and the start is too uncertain), or null. */
+  unreliable: string | null;
 }
 
+/** A wake-up this much later than requested is reported as delayed page timers. */
+export const TIMER_LATE_MS = 1000;
+/** Past the latest safe moment by more than this: the action has expired and is not sent. */
+export const LATE_TOLERANCE_MS = 500;
+/** With no clock shown, a turn start known only to within this cannot anchor the assumed deadline. */
+export const UNRELIABLE_START_MS = 2000;
+/** The wall clock and the monotonic page clock moved apart by more than this during one wait: a suspension. */
+export const CLOCK_JUMP_MS = 1000;
+
+export type WaitResult = 'due' | 'cancelled' | 'expired';
+
 export interface PendingAction {
+  /** Identity of this attempt (unique on the page). One opportunity normally has one attempt. */
+  id: number;
   key: string;
   label: string;
   decidedBy: string;
@@ -61,9 +92,20 @@ export interface PendingAction {
   /** Intentional waiting planned after the recommendation was ready. */
   plannedWaitMs: number;
   state: 'waiting' | 'executing';
+  armedAt: number;
+  /** When this attempt was handed to the executor (the click is sent right after the executor's checks). */
+  firingAt: number | null;
+  /** Largest delay of one of this attempt's wake-ups beyond the time asked for. */
+  maxLateMs: number;
+  lateWakeups: number;
+  /** Largest divergence of wall clock and page clock over one wait step (a suspension of the page or computer). */
+  clockJumpMs: number;
+  /** Why the attempt expired, when it did. */
+  expiry: string | null;
 }
 
-export interface ScheduleEvent { key: string; label: string | null; reason: string; at: number }
+export interface ScheduleEvent { key: string; label: string | null; reason: string; at: number; attempt?: number; kind?: 'cancelled' | 'expired' }
+export interface FiredEvent extends ScheduleEvent { delayMs: number; computeMs: number; waitedMs: number; conflict: string | null; attempt: number; maxLateMs: number }
 
 const s1 = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
@@ -99,15 +141,21 @@ export class ActionScheduler {
   private waiter: { key: string; wake: () => void } | null = null;
   pending: PendingAction | null = null;
   lastCancel: ScheduleEvent | null = null;
-  lastFired: (ScheduleEvent & { delayMs: number; computeMs: number; waitedMs: number; conflict: string | null }) | null = null;
+  lastFired: FiredEvent | null = null;
+  private attempts = 0;
+  /** Told about every attempt that ends without being executed (cancelled or expired), once. */
+  onSettle: ((p: PendingAction, kind: 'cancelled' | 'expired', reason: string) => void) | null = null;
+  /** Told about every wake-up that came at least TIMER_LATE_MS late. */
+  onLate: ((p: PendingAction, lateMs: number) => void) | null = null;
 
-  constructor(private readonly now: () => number, private readonly random: () => number) {}
+  /** `wall` is the wall clock (Date.now); it is only compared with `now` to detect a suspension. */
+  constructor(private readonly now: () => number, private readonly random: () => number, private readonly wall: (() => number) | null = null) {}
 
   /**
    * The plan for a confirmed opportunity: created (and its delay drawn) on first sight, reused afterwards. Only an
    * observed clock changes an existing plan, and only its deadline.
    */
-  plan(key: string, startedAt: number, deadline: { at: number | null; observed: boolean }, p: TimingPolicy, joinedMidTurn: boolean): ActionPlan {
+  plan(key: string, startedAt: number, deadline: { at: number | null; observed: boolean }, p: TimingPolicy, joinedMidTurn: boolean, startUncertaintyMs = 0): ActionPlan {
     let plan = this.plans.get(key);
     if (!plan) {
       const observed = deadline.observed && deadline.at !== null;
@@ -115,17 +163,23 @@ export class ActionScheduler {
       // Opened (or reloaded) during Hero's turn with no clock shown: when the turn began is unknown, so the
       // assumed clock may already be partly used. Wait only the minimum.
       if (joinedMidTurn && !observed) target = minimumOf(p);
+      const u = Math.max(0, startUncertaintyMs);
       plan = {
-        key, startedAt, targetDelayMs: target, joinedMidTurn,
-        deadlineAt: observed ? deadline.at! : startedAt + p.assumedClockMs,
+        key, startedAt, targetDelayMs: target, joinedMidTurn, startUncertaintyMs: u,
+        // No clock shown: counted from the EARLIEST moment the turn can have begun.
+        deadlineAt: observed ? deadline.at! : startedAt - u + p.assumedClockMs,
         deadlineSource: observed ? 'observed' : joinedMidTurn ? 'assumed, joined mid-turn' : 'assumed',
         latestSafeAt: 0, dueAt: 0, conflict: null, capped: null,
+        unreliable: !observed && u > UNRELIABLE_START_MS
+          ? `Hero's turn was first read ${s1(u)} after the previous read of the table (the browser delayed the page's timers), and no clock is shown: when the turn began, and so its deadline, is not known`
+          : null,
       };
       this.plans.set(key, plan);
       if (this.plans.size > 50) this.plans.delete(this.plans.keys().next().value as string);
     } else if (deadline.observed && deadline.at !== null) {
       plan.deadlineAt = deadline.at;
       plan.deadlineSource = 'observed';
+      plan.unreliable = null;
     }
     return place(plan, p);
   }
@@ -144,57 +198,121 @@ export class ActionScheduler {
     }
   }
 
-  /** A recommendation is ready and will be executed when due. Replaces nothing: one pending action at a time. */
-  arm(a: Omit<PendingAction, 'state' | 'plannedWaitMs'>): PendingAction | null {
+  /** A recommendation is ready and will be executed when due. One pending action at a time; none while one is executing. */
+  arm(a: Pick<PendingAction, 'key' | 'label' | 'decidedBy' | 'fallback' | 'computeMs'>): PendingAction | null {
     const plan = this.plans.get(a.key);
     if (!plan) return null;
-    this.pending = { ...a, plannedWaitMs: Math.max(0, plan.dueAt - this.now()), state: 'waiting' };
+    // An attempt whose click is in flight is never replaced: a second attempt cannot take over its identity or timing.
+    if (this.pending && this.pending.state === 'executing') return null;
+    const now = this.now();
+    this.pending = {
+      ...a, id: ++this.attempts, plannedWaitMs: Math.max(0, plan.dueAt - now), state: 'waiting', armedAt: now,
+      firingAt: null, maxLateMs: 0, lateWakeups: 0, clockJumpMs: 0, expiry: null,
+    };
     return this.pending;
   }
 
   /**
-   * Wait until the action is due. Returns false as soon as it is cancelled (cancel() wakes the wait at once; the
-   * predicate is also checked between steps). Steps are short so a deadline that moves is followed.
+   * Whether this attempt may still be executed now, judged on the monotonic page clock: null when it may, otherwise
+   * why not. Checked after every wake-up and once more immediately before the click.
    */
-  async waitUntilDue(key: string, sleep: (ms: number) => Promise<void>, isCancelled: () => boolean): Promise<boolean> {
+  verdict(p: PendingAction, now = this.now()): string | null {
+    const plan = this.plans.get(p.key);
+    if (!plan) return 'the timing plan of this decision point is gone';
+    if (plan.unreliable) return plan.unreliable;
+    if (p.clockJumpMs > CLOCK_JUMP_MS) return `the wall clock and the page clock moved apart by ${s1(p.clockJumpMs)} while waiting (the page or the computer was suspended): the time left on Hero's turn is not known`;
+    const over = now - plan.latestSafeAt;
+    if (over > LATE_TOLERANCE_MS) {
+      return `${s1(over)} past the latest safe moment (${s1(plan.latestSafeAt - plan.startedAt)} into the turn, ${plan.deadlineSource} deadline)${p.maxLateMs >= TIMER_LATE_MS ? `; the browser delayed the page's timers by up to ${s1(p.maxLateMs)}` : ''}: an expired decision is never executed`;
+    }
+    return null;
+  }
+
+  /**
+   * Wait until the attempt is due. 'cancelled' as soon as it is cancelled (cancel() wakes the wait at once; the
+   * predicate is also checked between steps), 'expired' when a wake-up finds it can no longer be executed (the
+   * attempt is then settled as expired, with the reason). Steps are short so a deadline that moves is followed.
+   */
+  async waitFor(p: PendingAction, sleep: (ms: number) => Promise<void>, isCancelled: () => boolean): Promise<WaitResult> {
     for (;;) {
-      const plan = this.plans.get(key);
-      if (!plan || isCancelled() || this.pending?.key !== key) return false;
+      const plan = this.plans.get(p.key);
+      if (!plan || isCancelled() || this.pending !== p) return 'cancelled';
+      const v = this.verdict(p);
+      if (v) { this.expire(p, v); return 'expired'; }
       const left = plan.dueAt - this.now();
-      if (left <= 0) return true;
+      if (left <= 0) return 'due';
+      const step = Math.min(left, 250);
+      const m0 = this.now(), w0 = this.wall ? this.wall() : null;
+      let woken = false;
       await new Promise<void>((resolve) => {
-        this.waiter = { key, wake: resolve };
-        void sleep(Math.min(left, 250)).then(() => resolve());
+        this.waiter = { key: p.key, wake: () => { woken = true; resolve(); } };
+        void sleep(step).then(() => resolve());
       });
       this.waiter = null;
+      const m1 = this.now();
+      if (w0 !== null && this.wall) {
+        const jump = Math.abs((this.wall() - w0) - (m1 - m0));
+        if (jump > p.clockJumpMs) p.clockJumpMs = jump;
+      }
+      if (woken) continue;
+      const late = m1 - (m0 + step);
+      if (late > p.maxLateMs) p.maxLateMs = late;
+      if (late >= TIMER_LATE_MS) { p.lateWakeups++; this.onLate?.(p, late); }
     }
   }
 
-  /** The pending action is being executed now (no cancellation can recall a click already sent). */
-  firing(key: string): void { if (this.pending?.key === key) { this.pending.state = 'executing'; this.firingAt = this.now(); } }
-  private firingAt: number | null = null;
+  /** Compatibility wrapper (0.9.1 callers): true when the pending attempt for this key is due. */
+  async waitUntilDue(key: string, sleep: (ms: number) => Promise<void>, isCancelled: () => boolean): Promise<boolean> {
+    const p = this.pending;
+    if (!p || p.key !== key) return false;
+    return (await this.waitFor(p, sleep, isCancelled)) === 'due';
+  }
 
-  fired(key: string, label: string, reason: string): void {
-    const plan = this.plans.get(key);
-    const p = this.pending?.key === key ? this.pending : null;
+  /** This attempt is being executed now (no cancellation can recall a click already sent). */
+  firing(p: PendingAction): void {
+    if (this.pending !== p) return;
+    p.state = 'executing';
+    p.firingAt = this.now();
+  }
+
+  /** The attempt's outcome is known. Timing is taken from THIS attempt only, up to the moment it was sent. */
+  fired(p: PendingAction, label: string, reason: string): FiredEvent {
+    const plan = this.plans.get(p.key);
     const at = this.now();
-    // Timing is measured to the moment the action was sent, not to the end of the table's confirmation.
-    const sentAt = this.firingAt ?? at;
-    this.firingAt = null;
+    const sentAt = p.firingAt ?? at;
     this.lastFired = {
-      key, label, reason, at, delayMs: plan ? sentAt - plan.startedAt : 0, computeMs: p?.computeMs ?? 0,
-      waitedMs: p && plan ? Math.max(0, sentAt - plan.startedAt - p.computeMs) : 0, conflict: plan?.conflict ?? null,
+      key: p.key, label, reason, at, attempt: p.id, maxLateMs: p.maxLateMs,
+      delayMs: plan ? sentAt - plan.startedAt : 0, computeMs: p.computeMs,
+      waitedMs: plan ? Math.max(0, sentAt - plan.startedAt - p.computeMs) : 0, conflict: plan?.conflict ?? null,
     };
-    if (p) this.pending = null;
+    if (this.pending === p) this.pending = null;
+    return this.lastFired;
+  }
+
+  private settle(p: PendingAction, kind: 'cancelled' | 'expired', reason: string): void {
+    this.lastCancel = { key: p.key, label: p.label, reason, at: this.now(), attempt: p.id, kind };
+    if (this.pending === p) this.pending = null;
+    this.onSettle?.(p, kind, reason);
+  }
+
+  private expire(p: PendingAction, reason: string): void {
+    if (p.state !== 'waiting') return;
+    p.expiry = reason;
+    this.settle(p, 'expired', reason);
+  }
+
+  /** The attempt was not executed after all (permission withdrawn or the clock ran out just before the click). */
+  abandon(p: PendingAction, kind: 'cancelled' | 'expired', reason: string): void {
+    if (this.pending !== p) return;
+    if (kind === 'expired') p.expiry = reason;
+    p.state = 'waiting';
+    this.settle(p, kind, reason);
   }
 
   /** Drop the pending action, if any, and say why. Wakes a wait immediately. */
   cancel(reason: string): void {
     const p = this.pending;
-    if (p && p.state === 'waiting') {
-      this.lastCancel = { key: p.key, label: p.label, reason, at: this.now() };
-      this.pending = null;
-    }
+    if (p && p.state === 'waiting') this.settle(p, 'cancelled', reason);
     const w = this.waiter;
     this.waiter = null;
     w?.wake();
