@@ -55,6 +55,16 @@ export interface RefOptions {
   turnRivers?: number | 'all';
   /** Repetitions of each run-out with fresh policy randomness. */
   reps?: number;
+  /**
+   * Phase 3.1c: also value PREFLOP decision points (the five board cards are sampled like a flop run-out). Off by
+   * default, so every earlier caller keeps its postflop-only check.
+   */
+  allowPreflop?: boolean;
+  /**
+   * Phase 3.1c: post-hoc rake charged to the measured seat's winnings: `pct` of the final pot capped at `cap`
+   * chips, only when a flop was dealt (no flop, no drop). Omitted = no rake, as before.
+   */
+  rake?: { pct: number; cap: number };
 }
 
 export interface RefValue {
@@ -101,7 +111,7 @@ function scenarios(spot: RefSpot, o: RefOptions): { list: Scenario[]; exact: boo
 }
 
 /** Play one scenario to the end after the measured seat takes `first`. Returns its change in stack from the decision point. */
-async function rollout(spot: RefSpot, first: Choice, sc: Scenario): Promise<number> {
+async function rollout(spot: RefSpot, first: Choice, sc: Scenario, rake?: { pct: number; cap: number }): Promise<number> {
   const h = cloneHand(spot.h);
   const hero = h.seats.find((s) => s.seat === spot.heroSeat)!;
   const before = hero.stack;
@@ -127,14 +137,28 @@ async function rollout(spot: RefSpot, first: Choice, sc: Scenario): Promise<numb
     } else throw new Error(`reference rollout stuck in phase ${h.phase}`);
   }
   if (h.phase === 'showdown') completeHand(h, (seat) => evaluateHand([...spot.holes.get(seat)!, ...h.board]));
-  return hero.stack - before;
+  const net = hero.stack - before;
+  return rake ? net - rakeShare(h, spot.heroSeat, rake) : net;
+}
+
+/** The measured seat's share of a post-hoc rake: in proportion to its winnings over the whole hand (none on a loss). */
+function rakeShare(h: HandState, heroSeat: number, rake: { pct: number; cap: number }): number {
+  if (h.board.length < 3) return 0;
+  let pot = 0, won = 0, heroWon = 0;
+  for (const s of h.seats) {
+    if (!s.dealtIn) continue;
+    pot += s.totalCommit;
+    const n = s.stack - s.startStack;
+    if (n > 0) { won += n; if (s.seat === heroSeat) heroWon = n; }
+  }
+  return won > 0 ? Math.min(rake.cap, rake.pct * pot) * heroWon / won : 0;
 }
 
 /** Value of each candidate action at one postflop decision point of the measured seat. */
 export async function referenceValues(spot: RefSpot, candidates: readonly Choice[], o: RefOptions): Promise<RefValue[]> {
   const { h } = spot;
   if (h.toAct !== spot.heroSeat) throw new Error('referenceValues: it is not the measured seat\'s turn');
-  if (h.board.length < 3) throw new Error('referenceValues: postflop decision points only');
+  if (h.board.length < 3 && !o.allowPreflop) throw new Error('referenceValues: postflop decision points only');
   const { list, exact } = scenarios(spot, o);
   const out: RefValue[] = [];
   for (const action of candidates) {
@@ -142,7 +166,7 @@ export async function referenceValues(spot: RefSpot, candidates: readonly Choice
     if (err) throw new Error(`referenceValues: illegal candidate ${action.kind}${action.to !== undefined ? ` ${action.to}` : ''}: ${err.code}`);
     const samples: number[] = [];
     if (action.kind === 'fold') for (let i = 0; i < list.length; i++) samples.push(0);
-    else for (const sc of list) samples.push(await rollout(spot, action, sc));
+    else for (const sc of list) samples.push(await rollout(spot, action, sc, o.rake));
     const n = samples.length;
     const mean = samples.reduce((a, b) => a + b, 0) / n;
     const v = n > 1 ? samples.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1) : 0;

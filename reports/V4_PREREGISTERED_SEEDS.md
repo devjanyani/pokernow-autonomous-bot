@@ -21,3 +21,22 @@ Seeds already used, and therefore not held out:
 | 32000–32027 | Phase 3.1 development benchmark (`sim/bot/v4-bench.ts --seed-base 32000`, the default) |
 
 Any later development run must use seeds outside 41000–41999.
+
+## Phase 3.1c (written 2026-11-27, before the held-out run)
+
+| Use | Seeds | Status |
+|---|---|---|
+| Development benchmark, suite `c31` of `sim/bot/v4-bench.ts` | 33000 + cell index (`[...cells(), ...cells31c()]`) | used for development |
+| Continuation valuations of the recorded spots (`sim/bot/preflop-consistency.ts`) | 33500 (recorded hands), 33600 (control hands) | used |
+| **Held-out benchmark for the 3.1c candidate** (`--suite c31 --seed-base 34000`) | 34000 + cell index | run **once**, after the candidate was frozen |
+
+Decision rule for adopting the `priceAware` candidate, fixed before the held-out run. All must hold on the held-out
+seeds:
+
+1. pooled `v2-price − v2` (no rake and with rake) has a 95% lower bound above 0;
+2. no cell has `v2-price − v2` with a 95% upper bound below 0;
+3. the punishing-opponent check is valid: `neg-loose-call − v2` is significantly negative on the punisher cells
+   (otherwise the benchmark cannot detect the cost of loose calling, and a "no degradation" result means nothing);
+4. the recorded-spot valuations show the call positive under the stronger-range assumption as well as the modelled one.
+
+If any fails, the strategy stays unchanged and the candidate stays off (benchmark-only flag).

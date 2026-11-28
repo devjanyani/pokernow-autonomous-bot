@@ -126,7 +126,24 @@ Recommended order:
 - **D5, lifecycle records:** one record per attempt, with its outcome, the reason, manual evidence (observed or
   inferred) and table confirmation. The schema addition is optional; no migration.
 
-**Next:** item 1, the pot-odds floor judged in the harness, only on instruction. Phase 3.2 has not started.
+#### 1.3.2 Status of item 1: Phase 3.1c done (2026-11-27), candidate not adopted
+
+[reports/PHASE_3_1C_PREFLOP_DECISION_CONSISTENCY.md](../../reports/PHASE_3_1C_PREFLOP_DECISION_CONSISTENCY.md).
+The pot-odds floor was built as `PreflopCorrections.priceAware`: own-range equity × the flop realisation factor
+against the increment plus the all-in rule's margin, in the two price-blind branches only. It was judged in the
+harness and **not adopted**:
+
+- it changed 1.2% of the decisions it could touch, and the paired result is null (dev +0.8 ± 2.9 bb/100, held-out
+  +0.6 ± 3.0);
+- because its realisation factor ignores the hand, it calls any two cards heads-up against a small 3-bet;
+- the punishing-opponent prerequisite (§1.2 item 1) is **still unmet**. The new `value-punisher` (three revisions)
+  does not punish loose calling; only version-2 self-play moves a loose-calling control the right way;
+- continuation valuations of the recorded QJs and 56s spots favour calling under the engine's own ranges, but not
+  robustly (stronger ranges, and 72o "profits" too).
+
+**Next:** Phase 3.2 on instruction. The two folds should be addressed there by sourced continuing ranges: one
+consistent with Hero's actual raising chart (vs 3-bet), and one accounting for Hero's limp (vs iso), not by a price
+rule. Phase 3.2 has not started.
 
 ## 2. Phase 3.2: validated preflop range data and mixed-frequency actions
 

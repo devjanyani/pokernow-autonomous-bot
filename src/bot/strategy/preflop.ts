@@ -35,6 +35,7 @@ import { bandWeight, CLASS_BY_NAME, rangeFraction, toWeighted } from '../ranges/
 import type { Mix as LibMix, SpotQuery, StrategyLibrary } from './library/library';
 import type { PreflopScenario as LibScenario } from './library/types';
 import { Candidate, EquitySummary, PreflopCoverage, PreflopSource } from './types';
+import { realizationFactor } from './postflop';
 import { VillainModel } from './villains';
 import { classifyPreflop, describePreflopContext } from './preflop-context';
 
@@ -49,8 +50,18 @@ import { classifyPreflop, describePreflopContext } from './preflop-context';
  *                     2.5bb CO / BTN; isolate 4bb + 1bb per limper in position, 5bb + 1bb out of position; 3-bet
  *                     3.6x in position, 4x out of position) instead of the fixed 2.5bb / 3x used since 0.5.
  * Chart precedence by documented validity is chosen with the library itself (defaultLibrary('documented')).
+ *
+ * Phase 3.1c candidate, OFF unless set (no shipped engine sets it; benchmarks only):
+ *   priceAware        In the two heuristic branches that never read the price (facing one raise without a chart, and
+ *                     facing a 3-bet of Hero's raise without a chart), a hand the band folds is called instead when
+ *                     its equity against the engine's OWN ranges for the players in the pot, discounted by the
+ *                     existing flop realisation factor (postflop.ts realizationFactor, out of position and per extra
+ *                     opponent), beats the incremental price by the margin of the computed all-in rule
+ *                     (1.5% of the pot after the call + 2% per player still to act). Fold is 0, the call costs only
+ *                     the increment and Hero's chips already in are sunk. Raises are never added; charts, computed
+ *                     all-in calls and every other branch are untouched.
  */
-export interface PreflopCorrections { consistentOpener?: boolean; chartSizes?: boolean }
+export interface PreflopCorrections { consistentOpener?: boolean; chartSizes?: boolean; priceAware?: boolean }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -186,6 +197,8 @@ export function decidePreflop(
   let raiseTo = la.minRaiseTo;
   let equity: EquitySummary | null = null;
   let callEv: number | null = null, callEvSe: number | null = null;
+  // Set by the two heuristic branches whose continuing range does not read the price (audit 2026-11-21 §6.3).
+  let priceBlind = false;
 
   const openSize = (): number => {
     let base = hero.pos!.isSmallBlind && !hu ? 3 : hu ? 2.5 : 2.5;
@@ -312,6 +325,7 @@ export function decidePreflop(
       mix.raise = inTop(cls, v);
       mix.call = Math.max(0, inTop(cls, v + callW) - mix.raise);
       mix.fold = 1 - mix.raise - mix.call;
+      priceBlind = true;
       basis.push(`heuristic: vs ${opener!.pos!.label} ${library && limpers > 0 ? 'raise over limpers' : 'open'} (est. ${(100 * openerF).toFixed(0)}% range)${callersAfterRaise ? ` + ${callersAfterRaise} caller(s), squeeze sizing` : ''}: 3-bet top ${(100 * v).toFixed(1)}%, continue top ${(100 * (v + callW)).toFixed(0)}%`);
     }
     // Evidence-gated exploit: 3-bet light against a player who demonstrably over-folds to 3-bets.
@@ -340,6 +354,7 @@ export function decidePreflop(
       const price = toCall / Math.max(1, pot + toCall);
       mix.call = effBB >= 40 && price < 0.36 ? Math.max(0, inTop(cls, clamp(0.5 * own, 0.05, 0.16)) - mix.raise) : 0;
       mix.fold = 1 - mix.raise - mix.call;
+      priceBlind = true;
       basis.push('heuristic: vs 3-bet without a chart: 4-bet top 2.6%, call a band of the opening range when deep');
     } else {
       mix.raise = inTop(cls, 0.02); mix.fold = 1 - mix.raise;
@@ -359,6 +374,26 @@ export function decidePreflop(
       basis.push('heuristic: vs 4-bet or more without a chart: continue top 1.3% (all-in)');
     }
     raiseTo = la.maxRaiseTo;
+  }
+
+  // ---- Phase 3.1c candidate (priceAware, off by default): price check for the two price-blind heuristic bands ----
+  if (corrections.priceAware && priceBlind && !facingJam && mix.fold > 1e-9 && toCall > 0 && la.canCall) {
+    const inPot = villains.filter((v) => v.line !== 'unacted' && !seatOf(h, v.seat).folded);
+    if (inPot.length) {
+      const est = multiwayEquity(heroCards, [], inPot.map((v) => toWeighted(v.range, heroCards).range), 2000, rng.int(1 << 30));
+      // Hero is out of position after the flop when any player in the pot acts after Hero there.
+      const oop = inPot.some((v) => seatOf(h, v.seat).pos!.postflopOrder > hero.pos!.postflopOrder);
+      const R = realizationFactor('flop', !oop, inPot.length, 0);
+      const after = pot + toCall;
+      const value = R * est.equity * after - toCall;
+      const margin = (0.015 + 0.02 * behind) * after;
+      const text = `equity ${(100 * est.equity).toFixed(1)}% vs ${inPot.length} modelled range(s) x realisation ${R.toFixed(2)} (${oop ? 'out of' : 'in'} position, ${inPot.length} opponent(s)) on ${after} = ${(R * est.equity * after).toFixed(1)} against the increment ${toCall} + margin ${margin.toFixed(1)}`;
+      if (value > margin) {
+        notes.push(`price check (phase 3.1c candidate): the band folds this hand, but ${text}: the fold share is called instead`);
+        mix.call += mix.fold; mix.fold = 0;
+        equity = { ...est };
+      } else notes.push(`price check (phase 3.1c candidate): ${text}: the band's fold stands`);
+    }
   }
 
   // ---- legalise the mix into concrete candidates ----
@@ -393,7 +428,7 @@ export function decidePreflop(
   }
   const gap = callEv !== null ? Math.abs(callEv) : null;
   if (chartQuality !== null && source === 'heuristic') source = chartQuality === 'exact' ? 'chart' : 'chart-approx';
-  for (const n of notes) basis.push(`phase 3.1: ${n}`);
+  for (const n of notes) basis.push(n.startsWith('price check') ? `phase 3.1c: ${n}` : `phase 3.1: ${n}`);
   const coverage: PreflopCoverage = { situation: ctx.situation, source, context: describePreflopContext(ctx), ctx };
   return { candidates, chosen, basis, adjustments, equity, evGap: gap, evGapSe: callEvSe, coverage };
 }

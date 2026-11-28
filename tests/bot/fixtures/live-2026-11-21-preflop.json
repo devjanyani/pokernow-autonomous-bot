@@ -1,0 +1,877 @@
+{
+ "source": "debug bundle 2026-11-21 (T8), anonymised: names, player ids and table id replaced",
+ "hands": [
+  {
+   "handId": "live-2026-11-21:T8:h25",
+   "smallBlind": 1,
+   "bigBlind": 2,
+   "ante": 0,
+   "board": [
+    "Jh",
+    "6s",
+    "5s",
+    "Qh",
+    "7d"
+   ],
+   "seats": [
+    {
+     "seat": 1,
+     "name": "P1",
+     "playerId": "p1",
+     "position": "UTG",
+     "startStack": 69,
+     "dealtIn": true
+    },
+    {
+     "seat": 2,
+     "name": "P2",
+     "playerId": "p2",
+     "position": "UTG+1",
+     "startStack": 100,
+     "dealtIn": true
+    },
+    {
+     "seat": 3,
+     "name": "P3",
+     "playerId": "p3",
+     "position": "MP",
+     "startStack": 239,
+     "dealtIn": true
+    },
+    {
+     "seat": 4,
+     "name": "P4",
+     "playerId": "p4",
+     "position": "HJ",
+     "startStack": 138,
+     "dealtIn": true
+    },
+    {
+     "seat": 5,
+     "name": "P5",
+     "playerId": "p5",
+     "position": "CO",
+     "startStack": 163,
+     "dealtIn": true
+    },
+    {
+     "seat": 6,
+     "name": "P6",
+     "playerId": "p6",
+     "position": null,
+     "startStack": 157,
+     "dealtIn": false
+    },
+    {
+     "seat": 7,
+     "name": "P7",
+     "playerId": "p7",
+     "position": "BTN",
+     "startStack": 136,
+     "dealtIn": true
+    },
+    {
+     "seat": 8,
+     "name": "P8",
+     "playerId": "p8",
+     "position": "SB",
+     "startStack": 124,
+     "dealtIn": true
+    },
+    {
+     "seat": 9,
+     "name": "P9",
+     "playerId": "p9",
+     "position": null,
+     "startStack": 22,
+     "dealtIn": false
+    },
+    {
+     "seat": 10,
+     "name": "P10",
+     "playerId": "p10",
+     "position": "BB",
+     "startStack": 183,
+     "dealtIn": true
+    }
+   ],
+   "events": [
+    {
+     "seq": 0,
+     "seat": 8,
+     "street": "preflop",
+     "kind": "post-sb",
+     "amount": 1,
+     "to": 1
+    },
+    {
+     "seq": 1,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "post-bb",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 2,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 3,
+     "seat": 2,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 4,
+     "seat": 3,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 5,
+     "seat": 4,
+     "street": "preflop",
+     "kind": "raise",
+     "amount": 4,
+     "to": 4
+    },
+    {
+     "seq": 6,
+     "seat": 5,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 4,
+     "to": 4
+    },
+    {
+     "seq": 7,
+     "seat": 7,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 8,
+     "seat": 8,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 1
+    },
+    {
+     "seq": 9,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 4
+    },
+    {
+     "seq": 10,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 4
+    },
+    {
+     "seq": 11,
+     "seat": 3,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 4
+    },
+    {
+     "seq": 12,
+     "seat": 10,
+     "street": "flop",
+     "kind": "bet",
+     "amount": 5,
+     "to": 5
+    },
+    {
+     "seq": 13,
+     "seat": 1,
+     "street": "flop",
+     "kind": "call",
+     "amount": 5,
+     "to": 5
+    },
+    {
+     "seq": 14,
+     "seat": 3,
+     "street": "flop",
+     "kind": "call",
+     "amount": 5,
+     "to": 5
+    },
+    {
+     "seq": 15,
+     "seat": 4,
+     "street": "flop",
+     "kind": "call",
+     "amount": 5,
+     "to": 5
+    },
+    {
+     "seq": 16,
+     "seat": 5,
+     "street": "flop",
+     "kind": "call",
+     "amount": 5,
+     "to": 5
+    },
+    {
+     "seq": 17,
+     "seat": 10,
+     "street": "turn",
+     "kind": "bet",
+     "amount": 10,
+     "to": 10
+    },
+    {
+     "seq": 18,
+     "seat": 1,
+     "street": "turn",
+     "kind": "raise",
+     "amount": 60,
+     "to": 60
+    },
+    {
+     "seq": 19,
+     "seat": 3,
+     "street": "turn",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 20,
+     "seat": 4,
+     "street": "turn",
+     "kind": "call",
+     "amount": 60,
+     "to": 60
+    },
+    {
+     "seq": 21,
+     "seat": 5,
+     "street": "turn",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 22,
+     "seat": 10,
+     "street": "turn",
+     "kind": "call",
+     "amount": 50,
+     "to": 60
+    },
+    {
+     "seq": 23,
+     "seat": 10,
+     "street": "river",
+     "kind": "bet",
+     "amount": 69,
+     "to": 69
+    },
+    {
+     "seq": 24,
+     "seat": 4,
+     "street": "river",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    }
+   ],
+   "heroSeat": 1,
+   "heroCards": [
+    "Qd",
+    "Jd"
+   ]
+  },
+  {
+   "handId": "live-2026-11-21:T8:h5",
+   "smallBlind": 1,
+   "bigBlind": 2,
+   "ante": 0,
+   "board": [
+    "4h",
+    "Kh",
+    "5h"
+   ],
+   "seats": [
+    {
+     "seat": 1,
+     "name": "P1",
+     "playerId": "p1",
+     "position": "CO",
+     "startStack": 97,
+     "dealtIn": true
+    },
+    {
+     "seat": 2,
+     "name": "P2",
+     "playerId": "p2",
+     "position": "BTN",
+     "startStack": 98,
+     "dealtIn": true
+    },
+    {
+     "seat": 3,
+     "name": "P3",
+     "playerId": "p3",
+     "position": null,
+     "startStack": 544,
+     "dealtIn": false
+    },
+    {
+     "seat": 4,
+     "name": "P4",
+     "playerId": "p4",
+     "position": "SB",
+     "startStack": 61,
+     "dealtIn": true
+    },
+    {
+     "seat": 5,
+     "name": "P5",
+     "playerId": "p5",
+     "position": "BB",
+     "startStack": 80,
+     "dealtIn": true
+    },
+    {
+     "seat": 6,
+     "name": "P6",
+     "playerId": "p6",
+     "position": "UTG",
+     "startStack": 118,
+     "dealtIn": true
+    },
+    {
+     "seat": 7,
+     "name": "P7",
+     "playerId": "p7",
+     "position": "UTG+1",
+     "startStack": 114,
+     "dealtIn": true
+    },
+    {
+     "seat": 8,
+     "name": "P8",
+     "playerId": "p8",
+     "position": "MP",
+     "startStack": 149,
+     "dealtIn": true
+    },
+    {
+     "seat": 9,
+     "name": "P9",
+     "playerId": "p9",
+     "position": null,
+     "startStack": 95,
+     "dealtIn": false
+    },
+    {
+     "seat": 10,
+     "name": "P10",
+     "playerId": "p10",
+     "position": "HJ",
+     "startStack": 46,
+     "dealtIn": true
+    }
+   ],
+   "events": [
+    {
+     "seq": 0,
+     "seat": 4,
+     "street": "preflop",
+     "kind": "post-sb",
+     "amount": 1,
+     "to": 1
+    },
+    {
+     "seq": 1,
+     "seat": 5,
+     "street": "preflop",
+     "kind": "post-bb",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 2,
+     "seat": 6,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 3,
+     "seat": 7,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 4,
+     "seat": 8,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 5,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 6,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "raise",
+     "amount": 12,
+     "to": 12
+    },
+    {
+     "seq": 7,
+     "seat": 2,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 8,
+     "seat": 4,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 1
+    },
+    {
+     "seq": 9,
+     "seat": 5,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 2
+    },
+    {
+     "seq": 10,
+     "seat": 6,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 2
+    },
+    {
+     "seq": 11,
+     "seat": 7,
+     "street": "preflop",
+     "kind": "raise",
+     "amount": 20,
+     "to": 22
+    },
+    {
+     "seq": 12,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 2
+    },
+    {
+     "seq": 13,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 10,
+     "to": 22
+    },
+    {
+     "seq": 14,
+     "seat": 7,
+     "street": "flop",
+     "kind": "bet",
+     "amount": 75,
+     "to": 75
+    },
+    {
+     "seq": 15,
+     "seat": 1,
+     "street": "flop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    }
+   ],
+   "heroSeat": 1,
+   "heroCards": [
+    "5d",
+    "6d"
+   ]
+  },
+  {
+   "handId": "live-2026-11-21:T8:h58",
+   "smallBlind": 1,
+   "bigBlind": 2,
+   "ante": 0,
+   "board": [
+    "Jc",
+    "Ah",
+    "3d",
+    "Qd",
+    "2d"
+   ],
+   "seats": [
+    {
+     "seat": 1,
+     "name": "P1",
+     "playerId": "p1",
+     "position": "UTG+2",
+     "startStack": 224,
+     "dealtIn": true
+    },
+    {
+     "seat": 2,
+     "name": "P2",
+     "playerId": "p2",
+     "position": "MP",
+     "startStack": 309,
+     "dealtIn": true
+    },
+    {
+     "seat": 3,
+     "name": "P3",
+     "playerId": "p3",
+     "position": "LJ",
+     "startStack": 39,
+     "dealtIn": true
+    },
+    {
+     "seat": 4,
+     "name": "P4",
+     "playerId": "p4",
+     "position": "HJ",
+     "startStack": 206,
+     "dealtIn": true
+    },
+    {
+     "seat": 5,
+     "name": "P5",
+     "playerId": "p5",
+     "position": "CO",
+     "startStack": 100,
+     "dealtIn": true
+    },
+    {
+     "seat": 6,
+     "name": "P6",
+     "playerId": "p6",
+     "position": "BTN",
+     "startStack": 770,
+     "dealtIn": true
+    },
+    {
+     "seat": 7,
+     "name": "P7",
+     "playerId": "p7",
+     "position": "SB",
+     "startStack": 100,
+     "dealtIn": true
+    },
+    {
+     "seat": 8,
+     "name": "P8",
+     "playerId": "p8",
+     "position": "BB",
+     "startStack": 389,
+     "dealtIn": true
+    },
+    {
+     "seat": 9,
+     "name": "P9",
+     "playerId": "p9",
+     "position": "UTG",
+     "startStack": 458,
+     "dealtIn": true
+    },
+    {
+     "seat": 10,
+     "name": "P10",
+     "playerId": "p10",
+     "position": "UTG+1",
+     "startStack": 338,
+     "dealtIn": true
+    }
+   ],
+   "events": [
+    {
+     "seq": 0,
+     "seat": 7,
+     "street": "preflop",
+     "kind": "post-sb",
+     "amount": 1,
+     "to": 1
+    },
+    {
+     "seq": 1,
+     "seat": 8,
+     "street": "preflop",
+     "kind": "post-bb",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 2,
+     "seat": 9,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 3,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 4,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 5,
+     "seat": 2,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 6,
+     "seat": 3,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 7,
+     "seat": 4,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 2,
+     "to": 2
+    },
+    {
+     "seq": 8,
+     "seat": 5,
+     "street": "preflop",
+     "kind": "raise",
+     "amount": 20,
+     "to": 20
+    },
+    {
+     "seq": 9,
+     "seat": 6,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 10,
+     "seat": 7,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 19,
+     "to": 20
+    },
+    {
+     "seq": 11,
+     "seat": 8,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 2
+    },
+    {
+     "seq": 12,
+     "seat": 10,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 18,
+     "to": 20
+    },
+    {
+     "seq": 13,
+     "seat": 1,
+     "street": "preflop",
+     "kind": "fold",
+     "amount": 0,
+     "to": 2
+    },
+    {
+     "seq": 14,
+     "seat": 3,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 18,
+     "to": 20
+    },
+    {
+     "seq": 15,
+     "seat": 4,
+     "street": "preflop",
+     "kind": "call",
+     "amount": 18,
+     "to": 20
+    },
+    {
+     "seq": 16,
+     "seat": 7,
+     "street": "flop",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 17,
+     "seat": 10,
+     "street": "flop",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 18,
+     "seat": 3,
+     "street": "flop",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 19,
+     "seat": 4,
+     "street": "flop",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 20,
+     "seat": 5,
+     "street": "flop",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 21,
+     "seat": 7,
+     "street": "turn",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 22,
+     "seat": 10,
+     "street": "turn",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 23,
+     "seat": 3,
+     "street": "turn",
+     "kind": "check",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 24,
+     "seat": 4,
+     "street": "turn",
+     "kind": "bet",
+     "amount": 10,
+     "to": 10
+    },
+    {
+     "seq": 25,
+     "seat": 5,
+     "street": "turn",
+     "kind": "raise",
+     "amount": 80,
+     "to": 80
+    },
+    {
+     "seq": 26,
+     "seat": 7,
+     "street": "turn",
+     "kind": "call",
+     "amount": 80,
+     "to": 80
+    },
+    {
+     "seq": 27,
+     "seat": 10,
+     "street": "turn",
+     "kind": "fold",
+     "amount": 0,
+     "to": 0
+    },
+    {
+     "seq": 28,
+     "seat": 3,
+     "street": "turn",
+     "kind": "call",
+     "amount": 19,
+     "to": 19
+    },
+    {
+     "seq": 29,
+     "seat": 4,
+     "street": "turn",
+     "kind": "call",
+     "amount": 70,
+     "to": 80
+    }
+   ],
+   "heroSeat": 1,
+   "heroCards": [
+    "Kd",
+    "Qs"
+   ]
+  }
+ ]
+}

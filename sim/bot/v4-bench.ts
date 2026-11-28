@@ -25,7 +25,7 @@ import { createHash } from 'crypto';
 import { AgentOptions } from '../../src/bot/agent';
 import { CardId } from '../../src/bot/cards';
 import { botPolicy, BotPolicy } from '../../src/bot/sim/policies';
-import { INDEPENDENT_FACTORIES } from '../../src/bot/sim/independent';
+import { INDEPENDENT_FACTORIES, PUNISHER_FACTORIES } from '../../src/bot/sim/independent';
 import { bb100, Bb100, HandResult, pairedDiff, playSession, Policy, PolicyView } from '../../src/bot/sim/table';
 import { classifyPreflop } from '../../src/bot/strategy/preflop-context';
 import { legalActions, potTotal } from '../../src/bot/table/engine';
@@ -78,9 +78,28 @@ export function cells(): Cell[] {
   return out;
 }
 
+/**
+ * Phase 3.1c cells (appended after cells(), so the 28 pre-registered cell indices are unchanged). Pools with the
+ * value-punisher (src/bot/sim/independent.ts), which plays narrower, stronger ranges at small, tempting sizes than a
+ * percentile model gives it and does not over-fold after the flop, with one loose limper per table.
+ */
+export function cells31c(): Cell[] {
+  // Mostly punishers; one loose limper (pot-odds-caller) per table creates the limped and isolated pots.
+  const six = ['value-punisher', 'value-punisher', 'pot-odds-caller', 'value-punisher', 'value-punisher'];
+  const nine = ['value-punisher', 'value-punisher', 'pot-odds-caller', 'value-punisher', 'value-punisher', 'value-punisher', 'trapper', 'value-punisher'];
+  const out: Cell[] = [];
+  for (const st of [40, 100, 200]) out.push({ id: `six-punish-${st}`, field: [...six], stackBB: st, sizes: 'std' });
+  for (const st of [40, 100, 200]) out.push({ id: `nine-punish-${st}`, field: [...nine], stackBB: st, sizes: 'std' });
+  // Self-play: every opponent is version 2 itself (not independent, but the strongest opponent available here).
+  for (const st of [40, 100]) out.push({ id: `nine-self-${st}`, field: Array(8).fill('bot-v2'), stackBB: st, sizes: 'std' });
+  return out;
+}
+let selfSeed = 0;
+const opponent = (k: string): Policy => k === 'bot-v2' ? botPolicy({ engine: 'v2', seed: 500 + (selfSeed++ % 8), samples: 150, name: 'bot-v2' }) : (INDEPENDENT_FACTORIES[k] ?? PUNISHER_FACTORIES[k])();
+
 // ---------- engines ----------
 
-export type EngineId = 'v2' | 'v2c' | 'v2-prec' | 'v2-opener' | 'v2-sizes' | 'v3pr' | 'neg-limp-call' | 'neg-nit' | 'neg-random' | 'neg-fold';
+export type EngineId = 'v2' | 'v2c' | 'v2-prec' | 'v2-opener' | 'v2-sizes' | 'v3pr' | 'v2-price' | 'neg-loose-call' | 'neg-limp-call' | 'neg-nit' | 'neg-random' | 'neg-fold';
 
 const loadJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
 
@@ -91,6 +110,7 @@ function agentOpts(e: EngineId, samples: number): AgentOptions & { samples: numb
     case 'v2-prec': return { ...base, preflopCorrections: { precedence: 'documented' } };
     case 'v2-opener': return { ...base, preflopCorrections: { consistentOpener: true } };
     case 'v2-sizes': return { ...base, preflopCorrections: { chartSizes: true } };
+    case 'v2-price': return { ...base, preflopCorrections: { priceAware: true } };
     case 'v3pr': return { ...base, engine: 'v3', v3Sensitivity: false, v3Population: loadJson('src/bot/strategy/v3/population-calibration.json'), v3RiverRange: loadJson('src/bot/strategy/v3/river-range-calibration.json') };
     default: return base;
   }
@@ -108,19 +128,26 @@ export interface HeroStats {
   safety: number;
   illegal: number;
   msPreflop: number[];
+  /** Phase 3.1c: decisions in the two price-blind heuristic branches, and how many of them were changed fold -> call. */
+  priceBlind: number;
+  changed: number;
 }
-const newStats = (): HeroStats => ({ preflop: 0, bySource: {}, actions: {}, rfi: {}, vpip: { n: 0, d: 0 }, safety: 0, illegal: 0, msPreflop: [] });
+const newStats = (): HeroStats => ({ preflop: 0, bySource: {}, actions: {}, rfi: {}, vpip: { n: 0, d: 0 }, safety: 0, illegal: 0, msPreflop: [], priceBlind: 0, changed: 0 });
+
+/** The basis lines of the two heuristic branches that do not read the price (strategy/preflop.ts). */
+const PRICE_BLIND = (b: string) => (b.startsWith('heuristic: vs ') && b.includes('continue top')) || b.startsWith('heuristic: vs 3-bet without a chart');
 
 /**
  * The measured seat. Version 2 / 3 variants are the bot itself. Negative controls (deliberately poor preflop play,
- * version 2 after the flop): 'neg-limp-call' never raises and calls everything preflop; 'neg-nit' plays only the top
+ * version 2 after the flop): 'neg-loose-call' (Phase 3.1c) is version 2 except that every fold in the two price-blind
+ * heuristic branches becomes a call, whatever the price; 'neg-limp-call' never raises and calls everything preflop; 'neg-nit' plays only the top
  * ~3% (raises them) and folds the rest; 'neg-random' takes a uniformly random legal preflop action; 'neg-fold' folds
  * every hand preflop (checks when free).
  */
 function measured(e: EngineId, samples: number, stats: HeroStats): Policy {
   const bot: BotPolicy = botPolicy(agentOpts(e, samples));
   bot.keepDecisions = false;
-  const neg = e.startsWith('neg-');
+  const neg = e.startsWith('neg-') && e !== 'neg-loose-call';
   return {
     name: e,
     observe: (h, reveals) => bot.observe!(h, reveals),
@@ -136,6 +163,11 @@ function measured(e: EngineId, samples: number, stats: HeroStats): Policy {
           stats.bySource[d.preflop?.source ?? 'none'] = (stats.bySource[d.preflop?.source ?? 'none'] ?? 0) + 1;
           if (d.basis.some((b) => b.startsWith('safety:'))) stats.safety++;
           out = { kind: d.action, to: d.to };
+          if (d.basis.some(PRICE_BLIND)) {
+            stats.priceBlind++;
+            if (d.basis.some((b) => b.includes('the fold share is called instead'))) stats.changed++;
+            if (e === 'neg-loose-call' && d.action === 'fold' && v.la.canCall) { out = { kind: 'call' }; stats.changed++; }
+          }
         }
         stats.preflop++;
         const pos = v.h.seats.find((s) => s.seat === v.seat)!.pos!.label;
@@ -203,7 +235,7 @@ export interface CellResult {
 export async function runCell(c: Cell, e: EngineId, deals: number, seed: number, samples: number): Promise<CellResult> {
   const stats = newStats();
   const hero = measured(e, samples, stats);
-  const players = [{ playerId: HERO, policy: hero }, ...c.field.map((k, i) => ({ playerId: `${k}-${i}`, policy: resized(INDEPENDENT_FACTORIES[k](), c.sizes) }))];
+  const players = [{ playerId: HERO, policy: hero }, ...c.field.map((k, i) => ({ playerId: `${k}-${i}`, policy: resized(opponent(k), c.sizes) }))];
   const perDeal: number[] = [], perDealRaked: number[] = [];
   const res = await playSession({
     players, hands: deals, seed, smallBlind: BB / 2, bigBlind: BB, startStack: c.stackBB * BB, mode: 'cash',
@@ -229,6 +261,9 @@ const SUITES: Record<string, { engines: EngineId[]; cells: (all: Cell[]) => Cell
   ablation: { engines: ['v2', 'v2-prec', 'v2-opener', 'v2-sizes'], cells: (all) => all.filter((c) => /^(six|nine)-100-/.test(c.id)) },
   negative: { engines: ['v2', 'neg-limp-call', 'neg-nit', 'neg-random', 'neg-fold'], cells: (all) => all.filter((c) => ['hu-nit-100', 'hu-maniac-100', 'six-100-std', 'nine-100-std', 'six-40-std', 'nine-200-std'].includes(c.id)) },
   smoke: { engines: ['v2', 'neg-fold'], cells: (all) => all.filter((c) => c.id === 'hu-pot-odds-caller-100') },
+  // Phase 3.1c: the price check against v2 and the loose-calling negative control, on the ring pools and the
+  // punisher pools. Development seeds 33000 + cell index; held-out 34000 + cell index (reports/V4_PREREGISTERED_SEEDS.md).
+  c31: { engines: ['v2', 'v2-price', 'neg-loose-call'], cells: (all) => all.filter((c) => /^(six|nine)-(40|100|200)-(std|big)$/.test(c.id) || /-(punish|self)-/.test(c.id)) },
 };
 
 const fmt = (r: { bb100: number; ci95: number }) => `${r.bb100 >= 0 ? '+' : ''}${r.bb100.toFixed(1)} ± ${r.ci95.toFixed(1)}`;
@@ -259,7 +294,7 @@ export function report(results: CellResult[], title: string): string[] {
   }
   out.push('', '`*`: the 95% interval excludes 0.', '');
   // Process measures per engine, pooled.
-  out.push('| engine | preflop decisions | VPIP | sources (share of preflop decisions) | legality-gate replacements | illegal actions | preflop latency median / p95 |', '|---|---|---|---|---|---|---|');
+  out.push('| engine | preflop decisions | VPIP | price-blind heuristic decisions | changed to call | sources (share of preflop decisions) | legality-gate replacements | illegal actions | preflop latency median / p95 |', '|---|---|---|---|---|---|---|---|---|');
   for (const e of engines) {
     const rs = results.filter((r) => r.engine === e);
     const n = rs.reduce((t, r) => t + r.stats.preflop, 0);
@@ -267,7 +302,7 @@ export function report(results: CellResult[], title: string): string[] {
     for (const r of rs) for (const [k, v] of Object.entries(r.stats.bySource)) src[k] = (src[k] ?? 0) + v;
     const tot = Object.values(src).reduce((a, b) => a + b, 0);
     const ms = rs.flatMap((r) => r.stats.msPreflop);
-    out.push(`| ${e} | ${n} | ${pct(rs.reduce((t, r) => t + r.stats.vpip.n, 0), rs.reduce((t, r) => t + r.stats.vpip.d, 0))} | ${tot ? Object.entries(src).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v, tot)}`).join(', ') : 'n/a (scripted)'} | ${rs.reduce((t, r) => t + r.stats.safety, 0)} | ${rs.reduce((t, r) => t + r.stats.illegal, 0)} | ${ms.length ? `${median(ms).toFixed(1)} / ${p95(ms).toFixed(1)} ms` : 'n/a'} |`);
+    out.push(`| ${e} | ${n} | ${pct(rs.reduce((t, r) => t + r.stats.vpip.n, 0), rs.reduce((t, r) => t + r.stats.vpip.d, 0))} | ${rs.reduce((t, r) => t + (r.stats.priceBlind ?? 0), 0)} | ${rs.reduce((t, r) => t + (r.stats.changed ?? 0), 0)} | ${tot ? Object.entries(src).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v, tot)}`).join(', ') : 'n/a (scripted)'} | ${rs.reduce((t, r) => t + r.stats.safety, 0)} | ${rs.reduce((t, r) => t + r.stats.illegal, 0)} | ${ms.length ? `${median(ms).toFixed(1)} / ${p95(ms).toFixed(1)} ms` : 'n/a'} |`);
   }
   out.push('');
   // Action distribution by situation for the bot variants.
@@ -299,7 +334,7 @@ async function main(): Promise<void> {
   const cfg = SUITES[suite];
   if (!cfg) throw new Error(`unknown suite ${suite}`);
   const deals = argN('deals', 1000), samples = argN('samples', 150), seedBase = argN('seed-base', 32000);
-  const all = cells();
+  const all = [...cells(), ...cells31c()];
   const only = argS('cells', '');
   const list = cfg.cells(all).filter((c) => !only || only.split(',').includes(c.id));
   const engines = argS('engines', '') ? argS('engines', '').split(',') as EngineId[] : cfg.engines;

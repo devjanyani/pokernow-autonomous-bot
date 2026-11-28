@@ -224,6 +224,62 @@ export function raiserPolicy(samples = 160): Policy {
   };
 }
 
+/**
+ * Phase 3.1c: built to punish a player who calls too loosely because a price looks good. Written from this spec,
+ * not from the bot's models:
+ *   - preflop it plays NARROWER and STRONGER ranges than a percentile model of its line would give it, at SMALL
+ *     sizes that offer a tempting price: isolates limpers with the top 8% to a min-raise, 3-bets the top 4% to 1.8x,
+ *     opens the top 12% to 2.5bb; it squeezes (top 10%, to 4x plus 1x per caller) when a raise has been called; it
+ *     4-bets all-in with the top 2.5% and calls 3-bets with the top 6%;
+ *   - postflop it bets 75% of the pot on every street with a POLAR range: its good hands (standing > 0.6) and a
+ *     share of its worst hands as bluffs, about one bluff for every two value bets (what a 75% pot bet needs to
+ *     make a bluff-catcher indifferent), so folding to its bets is not automatically right and calling them down
+ *     with weak pairs is not either; facing a bet it raises strong hands and continues with every hand whose
+ *     standing clears a price-scaled bar, so floats and thin bluffs do not take the pot away.
+ * Revision 3. Revision 1 continued only with the top ~40% facing a bet; revision 2 never bluffed. Against both the
+ * loose-calling negative control WON (a loose caller that folds correctly to pure value bets loses nothing), so
+ * neither could test the question. The revisions were judged ONLY against the negative control, never the candidate.
+ * A caller with dominated or drawing hands pays it off; it never pays off light itself.
+ */
+export function valuePunisherPolicy(samples = 160): Policy {
+  return {
+    name: 'value-punisher',
+    act(v) {
+      const { h, la } = v;
+      if (h.street === 'preflop') {
+        const me = seatOf(h, v.seat);
+        const pct = classPercentile(handClass(v.hole[0], v.hole[1]));
+        const late = me.pos!.behindPreflop <= 2 ? 1.3 : 1;
+        const pre = h.events.filter((e) => e.street === 'preflop' && !e.kind.startsWith('post'));
+        const raises = h.raisesThisStreet;
+        if (raises === 0) {
+          const limpers = pre.filter((e) => e.kind === 'call').length;
+          if (limpers > 0) return pct <= 0.08 ? wager(v, 2 * h.bigBlind, passive(v)) : giveUp(v);
+          return pct <= 0.12 * late ? wager(v, 2.5 * h.bigBlind, passive(v)) : giveUp(v);
+        }
+        if (raises === 1) {
+          let callers = 0, seen = false;
+          for (const e of pre) { if (e.kind === 'raise') seen = true; else if (seen && e.kind === 'call') callers++; }
+          if (callers > 0 && pct <= 0.1) return wager(v, (4 + callers) * h.currentBet, passive(v));
+          if (callers === 0 && pct <= 0.04) return wager(v, 1.8 * h.currentBet, passive(v));
+          return pct <= 0.1 ? passive(v) : giveUp(v);
+        }
+        if (pct <= 0.025) return wager(v, la.maxRaiseTo, passive(v));
+        return pct <= 0.06 ? passive(v) : giveUp(v);
+      }
+      const s = standing(rawEquity(v, samples), liveOpponents(h));
+      if (la.canCheck) {
+        if (s > 0.6) return wager(v, betTo(v, 0.75), { kind: 'check' });
+        // Bluffs: the worst hands, at about half the value-bet share (0.4 of hands are value; 0.2 are bluffed).
+        return s < 0.2 && liveOpponents(h) <= 2 ? wager(v, betTo(v, 0.75), { kind: 'check' }) : { kind: 'check' };
+      }
+      const price = la.callAmount / (potTotal(h) + la.callAmount);
+      if (s > 0.82) return wager(v, raiseTo(v, 1), { kind: 'call' });
+      return s >= 0.3 + 0.6 * price ? passive(v) : { kind: 'fold' };
+    },
+  };
+}
+
 export const INDEPENDENT_FACTORIES: Record<string, () => Policy> = {
   raiser: () => raiserPolicy(),
   'pot-odds-caller': () => potOddsCallerPolicy(),
@@ -232,4 +288,12 @@ export const INDEPENDENT_FACTORIES: Record<string, () => Policy> = {
   maniac: () => maniacPolicy(),
   nit: () => nitPolicy(),
   'adaptive-punisher': () => adaptivePunisherPolicy(),
+};
+
+/**
+ * Phase 3.1c opponents, kept apart from INDEPENDENT_FACTORIES so every earlier pool, test and pre-registered cell
+ * stays exactly as it was.
+ */
+export const PUNISHER_FACTORIES: Record<string, () => Policy> = {
+  'value-punisher': () => valuePunisherPolicy(),
 };

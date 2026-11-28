@@ -1,5 +1,35 @@
 # Development session log
 
+2026-11-27: Phase 3.1c, preflop decision consistency, from `19c2ed0` (strategy unchanged; 0.9.3).
+
+## Current state (checkpoint, Phase 3.1c)
+
+- **Report:** `reports/PHASE_3_1C_PREFLOP_DECISION_CONSISTENCY.md`.
+- **Tools:**
+  - `sim/bot/preflop-consistency.ts` prints the reconstructed context, the engine's decision and ranges, and
+    continuation values per candidate (opponents' cards drawn from the engine's ranges or the strongest half,
+    opponent families, Hero continues with v2). `--hero` swaps in control hands;
+  - `sim/bot/reference.ts` gains `allowPreflop` and `rake` (both off by default);
+  - `sim/bot/v4-bench.ts` gains suite `c31`, engines `v2-price` and `neg-loose-call`, cells `cells31c()` (punisher
+    and self-play pools, appended so pre-registered indices are unchanged), and counts of price-blind decisions and
+    changed decisions.
+- **Candidate:** `PreflopCorrections.priceAware` in `src/bot/strategy/preflop.ts`, off by default and not adopted.
+- **Opponent:** `valuePunisherPolicy` in `PUNISHER_FACTORIES` (`src/bot/sim/independent.ts`), revision 3. Three
+  revisions, and none punishes loose calling.
+- **Seeds:** dev 33000 + cell index; valuations 33500 / 33600; held-out 34000 + cell index, run once (spent).
+- **Tests:** `tests/bot/preflop-consistency-31c.test.ts` (19).
+- **Verified:** full suite **1,301 / 1,301** (97 files, `npx vitest run --maxWorkers=4 --minWorkers=1`), including the 19 new tests; type-check (`tsc --noEmit`, `npm run typecheck:tools`), lint (0 errors), production build: pass; Chromium, built extension, stand-in table, one at a time: `bot:e2e` 24/24, `bot:e2e:recommend` 32/32, `bot:e2e:exec` 28/28, `bot:e2e:dashboard` 40/40, `e2e-v3` 27/27 (same counts as 0.9.3). Not run on live PokerNow.
+- **Lesson:** the rule-based simulator opponents give up too easily after the flop. Loose calling beats them, and
+  calling a small 3-bet "profits" even with 72o. Do not read rollout values against them as evidence about hand
+  selection; check a control hand and a stronger-range variant every time.
+
+## To resume
+
+Only on instruction: Phase 3.2 (sourced continuing ranges for the two price-blind branches; a punishing opponent that
+actually punishes loose calls, roadmap §1.2 item 1).
+
+---
+
 2026-11-26: Phase 3.1b, live execution and tracking reliability (0.9.3), from `74bcad0`.
 
 ## Current state (checkpoint, v0.9.3)

@@ -1,10 +1,35 @@
 # Project progress
 
-Last updated: 2026-11-26. Branch `autonomous-bot`. Version 0.9.3.
+Last updated: 2026-11-27. Branch `autonomous-bot`. Version 0.9.3.
 
 Detailed documents: [docs/bot/README.md](docs/bot/README.md) (install and use), [TRACKING](docs/bot/TRACKING.md) (state reconstruction, what the real recording showed, debug bundle, next live test), [ARCHITECTURE](docs/bot/ARCHITECTURE.md), [STRATEGY](docs/bot/STRATEGY.md), [STORAGE](docs/bot/STORAGE.md), [LIMITATIONS](docs/bot/LIMITATIONS.md), [STRATEGY_V2_DIAGNOSIS](docs/bot/STRATEGY_V2_DIAGNOSIS.md) (why v2 does not beat v1), [POKER_DATA_TRAINING_ROADMAP](docs/bot/POKER_DATA_TRAINING_ROADMAP.md) (plan for Phase 2.2), [LONG_SESSION_DIAGNOSTIC_AUDIT](docs/bot/LONG_SESSION_DIAGNOSTIC_AUDIT.md) (the 2026-11-16 recording), [PHASE_2_2_REPORT](docs/bot/PHASE_2_2_REPORT.md) (reference evaluation, independent opponents, river solver reference). Session log: [DEVELOPMENT_SESSION.md](DEVELOPMENT_SESSION.md).
 
-## Checkpoint (2026-11-26, version 0.9.3: Phase 3.1b live execution and tracking reliability)
+## Checkpoint (2026-11-27, Phase 3.1c: preflop decision consistency; strategy unchanged)
+
+- **Report:** [reports/PHASE_3_1C_PREFLOP_DECISION_CONSISTENCY.md](reports/PHASE_3_1C_PREFLOP_DECISION_CONSISTENCY.md).
+  Version stays 0.9.3: no shipped behaviour changed.
+- **Root causes:** the QJs fold (h25) and the 56s fold (h5) come from the two heuristic preflop branches whose
+  continuing range is a fixed equity-ordering band and never reads the price.
+  - h25: the band treats a limper facing a min-raise like a cold caller of a fresh open (misclassified investment).
+  - h5: the band is a share of the top 28% of the equity ordering, while Hero had raised 56s from the isolation chart
+    (incompatible range assumptions).
+- **EV evidence** (`sim/bot/preflop-consistency.ts`, continuation rollouts from the recorded states, fold = 0):
+  calling beats folding under the engine's own ranges against most of 10 opponent families. It is not robust: with
+  ranges twice as strong, h5 turns negative, and the same method also "profits" calling with 72o. **Neither fold is
+  demonstrably negative-EV.**
+- **Candidate** `PreflopCorrections.priceAware` (off by default, benchmark-only): a realisation-discounted own-range
+  price check in those two branches. **Not adopted:**
+  - it changed 1.2% of the decisions it could touch, with no measurable effect (dev +0.8 ± 2.9, held-out
+    +0.6 ± 3.0 bb/100);
+  - it calls any two cards heads-up against small 3-bets;
+  - the punishing-opponent check failed: a loose-calling control gains against every independent pool, including the
+    new `value-punisher`.
+- **New:** fixture `tests/bot/fixtures/live-2026-11-21-preflop.json` (anonymised h25, h5, h58); 19 tests; bench suite
+  `c31`; `reference.ts` `allowPreflop` / `rake`; seeds registered in `reports/V4_PREREGISTERED_SEEDS.md`.
+- **Verified:** full suite **1,301 / 1,301** (97 files, `npx vitest run --maxWorkers=4 --minWorkers=1`), including the 19 new tests; type-check (`tsc --noEmit`, `npm run typecheck:tools`), lint (0 errors), production build: pass; Chromium, built extension, stand-in table, one at a time: `bot:e2e` 24/24, `bot:e2e:recommend` 32/32, `bot:e2e:exec` 28/28, `bot:e2e:dashboard` 40/40, `e2e-v3` 27/27 (same counts as 0.9.3). Not run on live PokerNow.
+- **Next:** only on instruction (Phase 3.2: sourced continuing ranges for these branches).
+
+## Previous checkpoint (2026-11-26, version 0.9.3: Phase 3.1b live execution and tracking reliability)
 
 - **Report:** [reports/PHASE_3_1B_RELIABILITY.md](reports/PHASE_3_1B_RELIABILITY.md). No strategy, range, model,
   default, authorisation or timing preference changed.
